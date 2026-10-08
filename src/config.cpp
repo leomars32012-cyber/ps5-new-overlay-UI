@@ -18,6 +18,7 @@ void config_set_defaults(OverlayConfig* config) {
     config->background_panel = true;
     config->position = 0;              /* 0 = Top, 1 = Bottom */
     config->font_size = 18;
+    config->update_interval_ms = 1000;
     config->toast_notifications = false;
     config->toast_interval_sec = 10;
 }
