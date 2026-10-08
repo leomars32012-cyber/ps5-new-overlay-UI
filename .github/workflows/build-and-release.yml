@@ -64,7 +64,7 @@ jobs:
           test -x /opt/ps5-payload-sdk/bin/prospero-cmake
           test -x /opt/ps5-payload-sdk/bin/prospero-clang
 
-      - name: Build ps5_overlay.elf
+      - name: Build single ps5_overlay.elf
         run: |
           export PS5_PAYLOAD_SDK=/opt/ps5-payload-sdk
           export LLVM_CONFIG=/usr/bin/llvm-config-18
@@ -80,16 +80,13 @@ jobs:
 
           # Build the main overlay ELF with the embedded payload
           cmake --build . --target ps5_overlay --verbose -j$(nproc)
-          cmake --build . --target ps5_overlay_toggle --verbose -j$(nproc)
           cd ..
 
           mkdir -p dist
           cp build/ps5_overlay.elf dist/ps5_overlay.elf
-          cp build/ps5_overlay_shellui.elf dist/ps5_overlay_shellui.elf
-          cp build/ps5_overlay_toggle.elf dist/ps5_overlay_toggle.elf
 
           cd dist
-          sha256sum ps5_overlay*.elf > SHA256SUMS.txt
+          sha256sum ps5_overlay.elf > SHA256SUMS.txt
           echo "=== SHA256 Checksums ==="
           cat SHA256SUMS.txt
 
@@ -99,8 +96,6 @@ jobs:
           name: ps5-overlay-build
           path: |
             dist/ps5_overlay.elf
-            dist/ps5_overlay_shellui.elf
-            dist/ps5_overlay_toggle.elf
             dist/SHA256SUMS.txt
           if-no-files-found: warn
 
@@ -143,6 +138,15 @@ jobs:
           body: |
             ## 🎮 PS5 Hardware Overlay ${{ steps.vars.outputs.tag }}
             
+            ### ✨ Beta 5 — Single Payload Architecture
+            - One ELF only: load ps5_overlay.elf through Payload Manager.
+            - The ShellUI HUD payload is compiled and embedded automatically into the main ELF.
+            - ps5_overlay_shellui.elf is an internal build artifact and is not required on the PS5.
+            - ps5_overlay_toggle.elf is no longer required.
+            - The persistent overlay state is stored in /data/ps5_overlay/config.ini.
+            - A dedicated PS5 UI settings app will later change this state without another ELF.
+
+            
             Lightweight, standalone in-game hardware monitoring overlay for jailbroken PlayStation 5 (FW 1.xx - 10.xx+, kstuff active).
             
             ### ✨ What's New in this Beta
@@ -184,8 +188,6 @@ jobs:
             Included in `SHA256SUMS.txt`.
           files: |
             dist/ps5_overlay.elf
-            dist/ps5_overlay_shellui.elf
-            dist/ps5_overlay_toggle.elf
             dist/SHA256SUMS.txt
             config.ini.example
         env:
