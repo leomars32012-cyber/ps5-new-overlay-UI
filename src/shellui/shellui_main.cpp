@@ -308,6 +308,38 @@ static bool read_overlay_enabled(void) {
     return enabled;
 }
 
+static void remove_overlay_widgets(MonoObject* root, MonoClass* widget_class, MonoDomain* domain) {
+    if (!root || !widget_class || !domain) return;
+
+    const char* names[] = {
+        "ps5_overlay_container",
+        "id_onion_overlay_bg",
+        "id_fps_lbl", "id_fps_val", "id_sep0",
+        "id_cpu_lbl", "id_cpu_val", "id_sep1",
+        "id_gpu_lbl", "id_gpu_val", "id_sep2",
+        "id_ram_lbl", "id_ram_val", "id_sep3",
+        "id_fan_lbl", "id_fan_val"
+    };
+
+    MonoMethod* find_widget =
+        mono_class_get_method_from_name(widget_class, "FindWidgetByName", 1);
+    MonoMethod* remove_from_parent =
+        mono_class_get_method_from_name(widget_class, "RemoveFromParent", 0);
+
+    if (!find_widget || !remove_from_parent) {
+        log_shellui("[SHELLUI] Overlay removal methods unavailable.\\n");
+        return;
+    }
+
+    for (const char* name : names) {
+        MonoString* mono_name = mono_string_new(domain, name);
+        void* args[1] = { mono_name };
+        MonoObject* widget = mono_runtime_invoke(find_widget, root, args, nullptr);
+        if (widget)
+            mono_runtime_invoke(remove_from_parent, widget, nullptr, nullptr);
+    }
+}
+
 static float get_fps_reading(void) {
     int fd = open("/system_tmp/fps_sample", O_RDONLY);
     if (fd >= 0) {
@@ -481,7 +513,13 @@ int main(int argc, const char* argv[]) {
             fan_val = nullptr;
             log_shellui("[SHELLUI] Overlay disabled; skipping HUD creation for Game scene.\\n");
         } else if (!game_scene && attached_to_game) {
-            log_shellui("[SHELLUI] Game closed, waiting for next game...\n");
+            log_shellui("[SHELLUI] Game closed, removing HUD and waiting for next game...\n");
+            if (hud_container) {
+                MonoMethod* remove_from_parent =
+                    mono_class_get_method_from_name(widget_class, "RemoveFromParent", 0);
+                if (remove_from_parent)
+                    mono_runtime_invoke(remove_from_parent, hud_container, nullptr, nullptr);
+            }
             attached_to_game = false;
             last_attached_scene = nullptr;
             hud_container = nullptr;
@@ -501,14 +539,13 @@ int main(int argc, const char* argv[]) {
          * will recreate it only if the persisted setting is enabled.
          */
         bool enabled_now = read_overlay_enabled();
-        if (!enabled_now && hud_container) {
-            MonoMethod* remove_from_parent = mono_class_get_method_from_name(widget_class, "RemoveFromParent", 0);
-            if (remove_from_parent) {
-                mono_runtime_invoke(remove_from_parent, hud_container, nullptr, nullptr);
-                log_shellui("[SHELLUI] HUD removed from Game scene because overlay is disabled.\\n");
-            } else {
-                log_shellui("[SHELLUI] RemoveFromParent method not found; HUD cannot be detached.\\n");
-            }
+        if (!enabled_now) {
+            MonoObject* current_root = nullptr;
+            if (game_scene)
+                current_root = mono_runtime_invoke(get_root, game_scene, nullptr, nullptr);
+
+            if (current_root)
+                remove_overlay_widgets(current_root, widget_class, domain);
 
             hud_container = nullptr;
             s_hud_container = nullptr;
