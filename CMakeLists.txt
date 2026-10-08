@@ -99,6 +99,37 @@ if(IS_PS5_BUILD)
 
     add_dependencies(ps5_overlay ps5_overlay_shellui)
 
+    # Small one-shot controller payload. Running it toggles config.ini enabled
+    # and sends a confirmation notification; the already-injected HUD reacts live.
+    add_executable(ps5_overlay_toggle
+        src/toggle.cpp
+        src/config.cpp
+        src/notify.cpp
+    )
+    set_target_properties(ps5_overlay_toggle PROPERTIES
+        OUTPUT_NAME "ps5_overlay_toggle"
+        SUFFIX ".elf"
+    )
+    target_compile_definitions(ps5_overlay_toggle PRIVATE
+        __PS5__=1
+        PS5=1
+        _GNU_SOURCE
+    )
+    target_include_directories(ps5_overlay_toggle PRIVATE
+        ${INCLUDE_DIRS}
+        ${PS5_PAYLOAD_SDK}/target/include
+    )
+    target_compile_options(ps5_overlay_toggle PRIVATE
+        -O2
+        -Wall
+        -Wextra
+    )
+    target_link_libraries(ps5_overlay_toggle PRIVATE
+        kernel_sys
+        SceNotification
+        SceLibcInternal
+    )
+
 else()
     # Host development / testing executable
     add_executable(ps5_overlay ${COMMON_SOURCES} src/embedded_shellui.c)
