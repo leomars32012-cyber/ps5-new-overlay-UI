@@ -13,12 +13,85 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <time.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <fcntl.h>
+#include <errno.h>
 
 static volatile bool s_running = true;
+static const char* kPidPath = "/data/ps5_overlay/ps5_overlay.pid";
 
 static void signal_handler(int sig) {
     (void)sig;
     s_running = false;
+}
+
+static bool read_pid_file(pid_t* pid_out) {
+    if (!pid_out) return false;
+    FILE* fp = fopen(kPidPath, "r");
+    if (!fp) return false;
+    long value = 0;
+    bool ok = (fscanf(fp, "%ld", &value) == 1 && value > 1);
+    fclose(fp);
+    if (!ok) return false;
+    *pid_out = (pid_t)value;
+    return true;
+}
+
+static bool pid_is_alive(pid_t pid) {
+    if (pid <= 1) return false;
+    if (kill(pid, 0) == 0) return true;
+    return errno == EPERM;
+}
+
+static bool create_pid_file(void) {
+    int fd = open(kPidPath, O_WRONLY | O_CREAT | O_EXCL, 0644);
+    if (fd < 0) return false;
+
+    char buf[32];
+    int len = snprintf(buf, sizeof(buf), "%d\n", (int)getpid());
+    bool ok = (write(fd, buf, len) == len);
+    close(fd);
+
+    if (!ok) unlink(kPidPath);
+    return ok;
+}
+
+static void remove_pid_file(void) {
+    pid_t pid = 0;
+    if (read_pid_file(&pid) && pid == getpid()) {
+        unlink(kPidPath);
+    }
+}
+
+static bool toggle_existing_daemon(void) {
+    pid_t existing_pid = 0;
+    if (!read_pid_file(&existing_pid)) return false;
+
+    if (!pid_is_alive(existing_pid)) {
+        unlink(kPidPath);
+        return false;
+    }
+
+    OverlayConfig config{};
+    if (!config_load(&config, PS5_OVERLAY_DEFAULT_CONFIG_PATH)) {
+        fprintf(stderr, "[TOGGLE] Existing daemon found, but config could not be loaded.\n");
+        return true;
+    }
+
+    config.enabled = !config.enabled;
+    if (!config_save(&config, PS5_OVERLAY_DEFAULT_CONFIG_PATH)) {
+        fprintf(stderr, "[TOGGLE] Failed to save %s\n", PS5_OVERLAY_DEFAULT_CONFIG_PATH);
+        return true;
+    }
+
+    printf("[TOGGLE] Overlay %s (daemon PID %d)\n",
+           config.enabled ? "ENABLED" : "DISABLED",
+           (int)existing_pid);
+
+    notify_send_hud("PS5 Overlay",
+                    config.enabled ? "Overlay ENABLED" : "Overlay DISABLED");
+    return true;
 }
 
 int main(int argc, char** argv) {
@@ -43,11 +116,35 @@ int main(int argc, char** argv) {
         }
     }
 
-    /* Register signal handlers for clean exit */
+    /*
+     * Single-ELF persistent toggle:
+     * - First launch starts the resident overlay daemon.
+     * - Launching the same ELF again while the daemon is running toggles
+     *   the persistent state and exits immediately.
+     * Use this from the PS5 home screen, not during gameplay.
+     */
+    if (!test_mode) {
+        if (mkdir("/data/ps5_overlay", 0777) != 0 && errno != EEXIST) {
+            fprintf(stderr, "[ERROR] Failed to create /data/ps5_overlay (errno=%d)\n", errno);
+            return 1;
+        }
+
+        if (toggle_existing_daemon()) {
+            return 0;
+        }
+
+        unlink(kPidPath);
+
+        if (!create_pid_file()) {
+            if (toggle_existing_daemon()) return 0;
+            fprintf(stderr, "[ERROR] Failed to create daemon PID file.\n");
+            return 1;
+        }
+    }
+
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 
-    /* Load configuration */
     OverlayConfig config;
     if (config_load(&config, PS5_OVERLAY_DEFAULT_CONFIG_PATH)) {
         printf("[CONFIG] Loaded settings from %s\n", PS5_OVERLAY_DEFAULT_CONFIG_PATH);
@@ -56,17 +153,12 @@ int main(int argc, char** argv) {
     }
 
     if (!config.enabled) {
-        /*
-         * Keep the daemon alive even when the HUD starts disabled.
-         * The injected ShellUI payload now watches config.ini and can
-         * be enabled/disabled live without reinjecting the ELF.
-         */
-        printf("[INFO] Overlay starts disabled; live control remains active.\n");
+        printf("[INFO] Overlay starts disabled; persistent toggle remains active.\n");
     }
 
-    /* Initialize subsystems */
     if (!monitor_init()) {
         fprintf(stderr, "[ERROR] Failed to initialize hardware monitor.\n");
+        remove_pid_file();
         return 1;
     }
 
@@ -74,7 +166,6 @@ int main(int argc, char** argv) {
         fprintf(stderr, "[WARNING] Overlay UI init returned false; proceeding with fallback.\n");
     }
 
-    /* Inject in-game overlay into SceShellUI */
     bool hud_injected = false;
     if (!test_mode) {
         unlink("/system_tmp/ps5_overlay_ready");
@@ -94,7 +185,6 @@ int main(int argc, char** argv) {
         }
     }
 
-    /* Send single startup notification toast */
     if (hud_injected) {
         notify_send_hud("PS5 Overlay Active", "HUD Injected! Launch any game to view overlay");
     } else {
@@ -110,7 +200,6 @@ int main(int argc, char** argv) {
     char hud_line2[128]{};
     time_t last_toast_time = 0;
 
-    /* Main monitor loop */
     while (s_running) {
         if (monitor_update(&metrics)) {
             monitor_format_hud_string(&metrics, &config, hud_text, sizeof(hud_text));
@@ -140,6 +229,7 @@ int main(int argc, char** argv) {
     printf("\n[STATUS] Shutting down PS5 Overlay daemon...\n");
     overlay_ui_shutdown();
     monitor_cleanup();
+    remove_pid_file();
     printf("[STATUS] Goodbye!\n");
     return 0;
 }
