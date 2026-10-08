@@ -56,8 +56,12 @@ int main(int argc, char** argv) {
     }
 
     if (!config.enabled) {
-        printf("[INFO] Overlay disabled in configuration. Exiting.\n");
-        return 0;
+        /*
+         * Keep the daemon alive even when the HUD starts disabled.
+         * The injected ShellUI payload now watches config.ini and can
+         * be enabled/disabled live without reinjecting the ELF.
+         */
+        printf("[INFO] Overlay starts disabled; live control remains active.\n");
     }
 
     /* Initialize subsystems */
