@@ -6,7 +6,8 @@
 
 [ps5_overlay]
 
-# Enable or disable the overlay daemon
+# Enable or disable the overlay. This setting is live-reloaded by the injected HUD.
+# The daemon remains resident so the overlay can be toggled without reinjection.
 enabled = true
 
 # Screen position for 2D bar: "top" or "bottom"
