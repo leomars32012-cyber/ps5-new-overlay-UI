@@ -75,8 +75,15 @@ static bool toggle_existing_daemon(void) {
 
     OverlayConfig config{};
     if (!config_load(&config, PS5_OVERLAY_DEFAULT_CONFIG_PATH)) {
-        fprintf(stderr, "[TOGGLE] Existing daemon found, but config could not be loaded.\n");
-        return true;
+        /*
+         * A resident daemon without config.ini is a valid first-launch
+         * state. config_load() already populated safe defaults, so create
+         * the persistent file now and use the default enabled=true state.
+         */
+        if (!config_save(&config, PS5_OVERLAY_DEFAULT_CONFIG_PATH)) {
+            fprintf(stderr, "[TOGGLE] Existing daemon found, but config initialization failed.\n");
+            return true;
+        }
     }
 
     config.enabled = !config.enabled;
@@ -146,10 +153,24 @@ int main(int argc, char** argv) {
     signal(SIGTERM, signal_handler);
 
     OverlayConfig config;
-    if (config_load(&config, PS5_OVERLAY_DEFAULT_CONFIG_PATH)) {
+    bool config_loaded = config_load(&config, PS5_OVERLAY_DEFAULT_CONFIG_PATH);
+
+    if (config_loaded) {
         printf("[CONFIG] Loaded settings from %s\n", PS5_OVERLAY_DEFAULT_CONFIG_PATH);
     } else {
-        printf("[CONFIG] Using default settings (config not found or unreadable)\n");
+        /*
+         * First launch: config_load() has already populated config with
+         * safe defaults. Persist those defaults immediately so the ShellUI
+         * injector and the second invocation of this ELF share the same
+         * authoritative state file.
+         */
+        if (config_save(&config, PS5_OVERLAY_DEFAULT_CONFIG_PATH)) {
+            printf("[CONFIG] Created default settings at %s\n",
+                   PS5_OVERLAY_DEFAULT_CONFIG_PATH);
+        } else {
+            fprintf(stderr, "[WARNING] Could not create %s; using in-memory defaults.\n",
+                    PS5_OVERLAY_DEFAULT_CONFIG_PATH);
+        }
     }
 
     if (!config.enabled) {
