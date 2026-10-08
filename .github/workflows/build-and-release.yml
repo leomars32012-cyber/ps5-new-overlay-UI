@@ -80,11 +80,13 @@ jobs:
 
           # Build the main overlay ELF with the embedded payload
           cmake --build . --target ps5_overlay --verbose -j$(nproc)
+          cmake --build . --target ps5_overlay_toggle --verbose -j$(nproc)
           cd ..
 
           mkdir -p dist
           cp build/ps5_overlay.elf dist/ps5_overlay.elf
           cp build/ps5_overlay_shellui.elf dist/ps5_overlay_shellui.elf
+          cp build/ps5_overlay_toggle.elf dist/ps5_overlay_toggle.elf
 
           cd dist
           sha256sum ps5_overlay*.elf > SHA256SUMS.txt
@@ -98,6 +100,7 @@ jobs:
           path: |
             dist/ps5_overlay.elf
             dist/ps5_overlay_shellui.elf
+            dist/ps5_overlay_toggle.elf
             dist/SHA256SUMS.txt
           if-no-files-found: warn
 
@@ -176,6 +179,7 @@ jobs:
           files: |
             dist/ps5_overlay.elf
             dist/ps5_overlay_shellui.elf
+            dist/ps5_overlay_toggle.elf
             dist/SHA256SUMS.txt
             config.ini.example
         env:
