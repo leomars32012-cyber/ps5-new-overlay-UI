@@ -149,3 +149,23 @@ enabled = false
 The daemon can still be launched. When the toggle payload changes the value to `true`, the already-injected HUD becomes visible; changing it back to `false` hides it again.
 
 A true Home-screen Media/PKG application is intentionally not part of this change. That requires a separate PS5 application/PKG project and is independent of the overlay ELF.
+
+
+## Live toggle control (fork)
+
+This fork adds live visibility control. The injected ShellUI HUD watches `/data/ps5_overlay/config.ini` and hides or shows the complete HUD without reinjection.
+
+A small `ps5_overlay_toggle.elf` payload is also built. Running it flips `enabled` in the config and sends a confirmation notification. This makes the overlay controllable from etaHEN's payload/plugin UI without restarting the main overlay daemon.
+
+### First install
+
+Create `/data/ps5_overlay/config.ini` from `config.ini.example`. To start hidden:
+
+```ini
+[ps5_overlay]
+enabled = false
+```
+
+The daemon can still be launched. When the toggle payload changes the value to `true`, the already-injected HUD becomes visible; changing it back to `false` hides it again.
+
+A true Home-screen Media/PKG application is intentionally not part of this change. That requires a separate PS5 application/PKG project and is independent of the overlay ELF.
