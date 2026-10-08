@@ -404,7 +404,9 @@ int main(int argc, const char* argv[]) {
         MonoObject* exc = nullptr;
         MonoObject* game_scene = mono_runtime_invoke(find_scene, nullptr, scene_args, &exc);
 
-        if (game_scene && game_scene != last_attached_scene) {
+        bool enabled_now_for_scene = read_overlay_enabled();
+
+        if (game_scene && game_scene != last_attached_scene && enabled_now_for_scene) {
             MonoObject* root_widget = mono_runtime_invoke(get_root, game_scene, nullptr, &exc);
             if (root_widget) {
                 hud_container = mono_object_new(domain, panel_class);
@@ -462,6 +464,22 @@ int main(int argc, const char* argv[]) {
                 attached_to_game = true;
                 log_shellui("[SHELLUI] HUD attached to Game Scene RootWidget successfully!\n");
             }
+        } else if (game_scene && game_scene != last_attached_scene && !enabled_now_for_scene) {
+            /*
+             * Overlay is persistently disabled. Do not create any HUD widgets
+             * for this game scene. Mark the scene as observed so the disabled
+             * state cannot fall through into the HUD creation path.
+             */
+            last_attached_scene = game_scene;
+            attached_to_game = false;
+            hud_container = nullptr;
+            s_hud_container = nullptr;
+            fps_val = nullptr;
+            cpu_val = nullptr;
+            gpu_val = nullptr;
+            ram_val = nullptr;
+            fan_val = nullptr;
+            log_shellui("[SHELLUI] Overlay disabled; skipping HUD creation for Game scene.\\n");
         } else if (!game_scene && attached_to_game) {
             log_shellui("[SHELLUI] Game closed, waiting for next game...\n");
             attached_to_game = false;
