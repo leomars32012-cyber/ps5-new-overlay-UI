@@ -56,7 +56,6 @@ typedef void* MonoMethod;
 typedef void* MonoString;
 typedef void* MonoProperty;
 
-/* Function pointer definitions for Mono runtime (loaded from libmonosgen-2.0.sprx) */
 static MonoDomain* (*mono_get_root_domain)(void) = nullptr;
 static void* (*mono_thread_attach)(MonoDomain* domain) = nullptr;
 static MonoDomain* (*mono_domain_get)(void) = nullptr;
@@ -74,7 +73,6 @@ static void* (*mono_object_unbox)(MonoObject* obj) = nullptr;
 static void (*mono_runtime_object_init)(MonoObject* obj) = nullptr;
 static uint64_t (*mono_compile_method)(MonoMethod* method) = nullptr;
 
-/* Hardware monitor functions */
 static int (*sys_sceKernelGetCpuTemperature)(int* cputemp) = nullptr;
 static int (*sys_sceKernelGetSocSensorTemperature)(int sensorId, int* soctime) = nullptr;
 static int (*sys_sceKernelGetCurrentFanDuty)(uint16_t* duty, uint64_t* chassis) = nullptr;
@@ -98,7 +96,6 @@ static bool resolve_mono_symbols(void) {
         log_shellui("[SHELLUI] libmonosgen-2.0.sprx handle not found!\n");
         return false;
     }
-    log_shellui("[SHELLUI] Found libmonosgen-2.0.sprx handle: 0x%x\n", libmono);
 
     KERNEL_DLSYM(libmono, mono_get_root_domain);
     KERNEL_DLSYM(libmono, mono_thread_attach);
@@ -135,67 +132,47 @@ static MonoImage* load_system_dll(MonoDomain* domain, const char* dll_name) {
     char path[256];
     snprintf(path, sizeof(path), "/system_ex/common_ex/lib/%s", dll_name);
     MonoAssembly* assm = mono_domain_assembly_open(domain, path);
-    if (!assm) {
-        assm = mono_domain_assembly_open(domain, dll_name);
-    }
+    if (!assm) assm = mono_domain_assembly_open(domain, dll_name);
     if (!assm) return nullptr;
     return mono_assembly_get_image(assm);
 }
 
-/* Patch Sony's UI thread check so our background thread can freely manipulate PUI widgets */
 static void patch_main_thread_check(MonoDomain* domain) {
     log_shellui("[SHELLUI] Attempting to patch CheckRunningOnMainThread...\n");
     MonoImage* core_img = nullptr;
     for (int retry = 0; retry < 10 && !core_img; retry++) {
         core_img = load_system_dll(domain, "Sce.PlayStation.Core.dll");
-        if (!core_img) {
-            log_shellui("[SHELLUI] Waiting for Sce.PlayStation.Core.dll (%d/10)...\n", retry + 1);
-            sleep(1);
-        }
+        if (!core_img) sleep(1);
     }
-    if (!core_img) {
-        log_shellui("[SHELLUI] Sce.PlayStation.Core.dll not found\n");
-        return;
-    }
+    if (!core_img) return;
+
     MonoClass* diag_class = mono_class_from_name(core_img, "Sce.PlayStation.Core.Runtime", "Diagnostics");
-    if (!diag_class) {
-        log_shellui("[SHELLUI] Diagnostics class not found\n");
-        return;
-    }
+    if (!diag_class) return;
     MonoMethod* check_method = mono_class_get_method_from_name(diag_class, "CheckRunningOnMainThread", 0);
-    if (!check_method) {
-        log_shellui("[SHELLUI] CheckRunningOnMainThread method not found\n");
-        return;
-    }
+    if (!check_method) return;
+
     uint64_t real_addr = (uint64_t)mono_compile_method(check_method);
-    if (!real_addr) {
-        log_shellui("[SHELLUI] Failed to compile CheckRunningOnMainThread\n");
-        return;
-    }
-    log_shellui("[SHELLUI] CheckRunningOnMainThread address: 0x%lx\n", real_addr);
+    if (!real_addr) return;
 
     uint64_t page_addr = real_addr & ~0x3FFFULL;
     int r1 = sys_sceKernelMprotect ? sys_sceKernelMprotect((void*)page_addr, 0x4000, PROT_READ | PROT_WRITE | PROT_EXEC) : -1;
     if (r1 == 0) {
-        *(volatile uint8_t*)real_addr = 0xC3; // x86 'ret'
+        *(volatile uint8_t*)real_addr = 0xC3;
         sys_sceKernelMprotect((void*)page_addr, 0x4000, PROT_READ | PROT_EXEC);
-        log_shellui("[SHELLUI] CheckRunningOnMainThread successfully patched via sceKernelMprotect!\n");
+        log_shellui("[SHELLUI] CheckRunningOnMainThread patched.\n");
         return;
     }
+
     int r2 = kernel_mprotect(getpid(), page_addr, 0x4000, PROT_READ | PROT_WRITE | PROT_EXEC);
     if (r2 == 0) {
-        *(volatile uint8_t*)real_addr = 0xC3; // x86 'ret'
+        *(volatile uint8_t*)real_addr = 0xC3;
         kernel_mprotect(getpid(), page_addr, 0x4000, PROT_READ | PROT_EXEC);
-        log_shellui("[SHELLUI] CheckRunningOnMainThread successfully patched via kernel_mprotect!\n");
-        return;
+        log_shellui("[SHELLUI] CheckRunningOnMainThread patched via kernel_mprotect.\n");
     }
-    log_shellui("[SHELLUI] Failed to patch CheckRunningOnMainThread! (r1=%d, r2=%d)\n", r1, r2);
 }
 
-/* Thunk-compiled direct property setter (as used in onionHEN) */
 template <typename Param>
-static void Set_Property(MonoClass* Klass, MonoObject* Instance, const char* Property_Name, Param Value)
-{
+static void Set_Property(MonoClass* Klass, MonoObject* Instance, const char* Property_Name, Param Value) {
     if (!Klass || !Instance) return;
     MonoProperty* Prop = mono_class_get_property_from_name(Klass, Property_Name);
     if (!Prop) return;
@@ -207,10 +184,8 @@ static void Set_Property(MonoClass* Klass, MonoObject* Instance, const char* Pro
     Method(Instance, Value);
 }
 
-/* Property setter via runtime invoke for object references */
 template <typename Param>
-static void Set_Property_Invoke(MonoClass* Klass, MonoObject* Instance, const char* Property_Name, Param Value)
-{
+static void Set_Property_Invoke(MonoClass* Klass, MonoObject* Instance, const char* Property_Name, Param Value) {
     if (!Klass || !Instance) return;
     MonoProperty* Prop = mono_class_get_property_from_name(Klass, Property_Name);
     if (!Prop) return;
@@ -220,10 +195,8 @@ static void Set_Property_Invoke(MonoClass* Klass, MonoObject* Instance, const ch
     mono_runtime_invoke(Set_Method, Instance, args, nullptr);
 }
 
-/* Thunk-compiled constructor caller for unboxed value types */
 template <typename... Args>
-static void Invoke_Ctor(MonoClass* klass, MonoObject* instance, Args... args)
-{
+static void Invoke_Ctor(MonoClass* klass, MonoObject* instance, Args... args) {
     int count = sizeof...(args);
     MonoMethod* method = mono_class_get_method_from_name(klass, ".ctor", count);
     if (!method) return;
@@ -269,7 +242,6 @@ static MonoObject* create_hud_item(MonoDomain* domain, MonoImage* pui_img,
                                    MonoObject* root, const char* name, float x, float y,
                                    const char* text, MonoObject* font,
                                    float r, float g, float b, float a = 1.0f) {
-    /* 1. Container cell (Panel) positioned at (X = x, Y = 0) */
     MonoObject* cell = mono_object_new(domain, panel_class);
     if (!cell) return nullptr;
     mono_runtime_object_init(cell);
@@ -284,7 +256,6 @@ static MonoObject* create_hud_item(MonoDomain* domain, MonoImage* pui_img,
     Set_Property(panel_class, cell, "BackgroundVisibility", false);
     widget_append_child(widget_class, s_hud_container ? s_hud_container : root, cell);
 
-    /* 2. Label inside container cell */
     MonoObject* label = mono_object_new(domain, label_class);
     if (!label) return nullptr;
     mono_runtime_object_init(label);
@@ -296,9 +267,7 @@ static MonoObject* create_hud_item(MonoDomain* domain, MonoImage* pui_img,
     Set_Property(label_class, label, "Width", 300.0f);
     Set_Property(label_class, label, "Height", 34.0f);
     Set_Property(label_class, label, "Text", mono_string_new(domain, text));
-    if (font) {
-        Set_Property_Invoke(label_class, label, "Font", font);
-    }
+    if (font) Set_Property_Invoke(label_class, label, "Font", font);
     Set_Property(label_class, label, "HorizontalAlignment", 0);
     Set_Property(label_class, label, "VerticalAlignment", 0);
     Set_Property(label_class, label, "FitWidthToText", false);
@@ -307,17 +276,16 @@ static MonoObject* create_hud_item(MonoDomain* domain, MonoImage* pui_img,
     Set_Property(label_class, label, "EnableThemedTextShadow", true);
 
     MonoObject* text_color = create_ui_color(pui_img, domain, r, g, b, a);
-    if (text_color) {
-        Set_Property_Invoke(label_class, label, "TextColor", text_color);
-    }
-
+    if (text_color) Set_Property_Invoke(label_class, label, "TextColor", text_color);
     widget_append_child(widget_class, cell, label);
     return label;
 }
 
+/* Single source of truth shared with ps5_overlay_toggle.elf. */
 static bool read_overlay_enabled(void) {
     FILE* fp = fopen("/data/ps5_overlay/config.ini", "r");
     if (!fp) return true;
+
     bool enabled = true;
     char line[256];
     while (fgets(line, sizeof(line), fp)) {
@@ -329,8 +297,11 @@ static bool read_overlay_enabled(void) {
         if (*p != '=') continue;
         p++;
         while (*p == ' ' || *p == '\t') p++;
-        if (strncasecmp(p, "false", 5) == 0 || strncasecmp(p, "off", 3) == 0 || p[0] == '0' || strncasecmp(p, "no", 2) == 0) enabled = false;
-        else if (strncasecmp(p, "true", 4) == 0 || strncasecmp(p, "on", 2) == 0 || p[0] == '1' || strncasecmp(p, "yes", 3) == 0) enabled = true;
+
+        if (strncasecmp(p, "false", 5) == 0 || strncasecmp(p, "off", 3) == 0 || p[0] == '0' || strncasecmp(p, "no", 2) == 0)
+            enabled = false;
+        else if (strncasecmp(p, "true", 4) == 0 || strncasecmp(p, "on", 2) == 0 || p[0] == '1' || strncasecmp(p, "yes", 3) == 0)
+            enabled = true;
         break;
     }
     fclose(fp);
@@ -338,7 +309,6 @@ static bool read_overlay_enabled(void) {
 }
 
 static float get_fps_reading(void) {
-    /* 1. Try reading OnionHEN fps sample file if present */
     int fd = open("/system_tmp/fps_sample", O_RDONLY);
     if (fd >= 0) {
         uint8_t buf[128] = {0};
@@ -346,17 +316,13 @@ static float get_fps_reading(void) {
         close(fd);
         if (n >= 48) {
             uint32_t magic = *(uint32_t*)buf;
-            if (magic == 0x4F465053u) { /* 'OFPS' */
-                uint8_t valid = buf[12];
-                if (valid) {
-                    float fps = *(float*)(buf + 16);
-                    if (fps > 0.0f && fps <= 245.0f) return fps;
-                }
+            if (magic == 0x4F465053u && buf[12]) {
+                float fps = *(float*)(buf + 16);
+                if (fps > 0.0f && fps <= 245.0f) return fps;
             }
         }
     }
 
-    /* 2. Try reading /system_tmp/ps5_fps.txt written by ps5_overlay daemon */
     FILE* fp = fopen("/system_tmp/ps5_fps.txt", "r");
     if (fp) {
         float f = 0.0f;
@@ -366,7 +332,6 @@ static float get_fps_reading(void) {
         }
         fclose(fp);
     }
-
     return 0.0f;
 }
 #endif
@@ -378,37 +343,24 @@ int main(int argc, const char* argv[]) {
 #if defined(__PS5__) || defined(PS5)
     log_shellui("[SHELLUI] Overlay thread started in PID %d\n", getpid());
 
-    /* 1. Resolve Mono runtime functions */
     while (!resolve_mono_symbols()) {
         log_shellui("[SHELLUI] Waiting for Mono symbols...\n");
         sleep(1);
     }
 
     MonoDomain* domain = mono_get_root_domain();
-    if (!domain) {
-        log_shellui("[SHELLUI] mono_get_root_domain returned null!\n");
-        return -1;
-    }
+    if (!domain) return -1;
     mono_thread_attach(domain);
-    log_shellui("[SHELLUI] Attached to Mono root domain: %p\n", domain);
-
-    /* 2. Patch Sony's MainThread check so background UI modifications succeed */
     patch_main_thread_check(domain);
 
-    /* 3. Load assemblies */
     MonoImage* pui_img = nullptr;
     MonoImage* app_system_img = nullptr;
     while (!pui_img || !app_system_img) {
         pui_img = load_system_dll(domain, "Sce.PlayStation.PUI.dll");
         app_system_img = load_system_dll(domain, "Sce.Vsh.ShellUI.AppSystem.dll");
-        if (!pui_img || !app_system_img) {
-            log_shellui("[SHELLUI] Waiting for PUI / AppSystem assemblies...\n");
-            sleep(1);
-        }
+        if (!pui_img || !app_system_img) sleep(1);
     }
-    log_shellui("[SHELLUI] Loaded PUI (%p) and AppSystem (%p)\n", pui_img, app_system_img);
 
-    /* 4. Get classes and methods */
     MonoClass* layer_mgr_class = mono_class_from_name(app_system_img, "Sce.Vsh.ShellUI.AppSystem", "LayerManager");
     MonoClass* scene_class = mono_class_from_name(pui_img, "Sce.PlayStation.PUI.UI2", "Scene");
     MonoClass* widget_class = mono_class_from_name(pui_img, "Sce.PlayStation.PUI.UI2", "Widget");
@@ -423,23 +375,17 @@ int main(int argc, const char* argv[]) {
     MonoMethod* find_scene = mono_class_get_method_from_name(layer_mgr_class, "FindContainerSceneByPath", 1);
     MonoProperty* root_prop = mono_class_get_property_from_name(scene_class, "RootWidget");
     MonoMethod* get_root = root_prop ? mono_property_get_get_method(root_prop) : nullptr;
+    if (!find_scene || !get_root) return -1;
 
-    if (!find_scene || !get_root) {
-        log_shellui("[SHELLUI] FindContainerSceneByPath or get_RootWidget method not found!\n");
-        return -1;
-    }
-
-    /* Signal initial readiness */
-    FILE* fp = fopen("/system_tmp/ps5_overlay_ready", "w");
-    if (fp) {
-        fprintf(fp, "%d\n", getpid());
-        fclose(fp);
+    FILE* ready_fp = fopen("/system_tmp/ps5_overlay_ready", "w");
+    if (ready_fp) {
+        fprintf(ready_fp, "%d\n", getpid());
+        fclose(ready_fp);
     }
 
     log_shellui("[SHELLUI] Overlay ready! Entering game monitoring loop...\n");
 
     MonoObject* hud_container = nullptr;
-    MonoObject* bg_panel = nullptr;
     MonoObject* fps_val = nullptr;
     MonoObject* cpu_val = nullptr;
     MonoObject* gpu_val = nullptr;
@@ -448,7 +394,10 @@ int main(int argc, const char* argv[]) {
     bool attached_to_game = false;
     MonoObject* last_attached_scene = nullptr;
 
-    /* Continuous monitoring loop: attaches to Game scene whenever active */
+    /* Do not assume true: start from the actual persisted setting. */
+    bool last_enabled = read_overlay_enabled();
+    log_shellui("[SHELLUI] Initial overlay state: %s\n", last_enabled ? "ENABLED" : "DISABLED");
+
     while (true) {
         MonoString* game_str = mono_string_new(domain, "Game");
         void* scene_args[1] = { game_str };
@@ -456,13 +405,8 @@ int main(int argc, const char* argv[]) {
         MonoObject* game_scene = mono_runtime_invoke(find_scene, nullptr, scene_args, &exc);
 
         if (game_scene && game_scene != last_attached_scene) {
-            log_shellui("[SHELLUI] Found active Game container scene: %p\n", game_scene);
             MonoObject* root_widget = mono_runtime_invoke(get_root, game_scene, nullptr, &exc);
-
             if (root_widget) {
-                log_shellui("[SHELLUI] Game RootWidget: %p. Creating HUD widgets...\n", root_widget);
-
-                /* Parent container lets the complete HUD be hidden/shown live. */
                 hud_container = mono_object_new(domain, panel_class);
                 if (hud_container) {
                     mono_runtime_object_init(hud_container);
@@ -476,10 +420,13 @@ int main(int argc, const char* argv[]) {
                     s_hud_container = hud_container;
                 }
 
-                /* Create HUD background panel */
-                bg_panel = mono_object_new(domain, panel_class);
+                MonoObject* bg_panel = mono_object_new(domain, panel_class);
+                if (!bg_panel) {
+                    attached_to_game = false;
+                    last_attached_scene = game_scene;
+                    continue;
+                }
                 mono_runtime_object_init(bg_panel);
-
                 Set_Property(panel_class, bg_panel, "Name", mono_string_new(domain, "id_onion_overlay_bg"));
                 Set_Property(panel_class, bg_panel, "X", 0.0f);
                 Set_Property(panel_class, bg_panel, "Y", 0.0f);
@@ -487,124 +434,91 @@ int main(int argc, const char* argv[]) {
                 Set_Property(panel_class, bg_panel, "Height", 34.0f);
 
                 MonoObject* bg_color = create_ui_color(pui_img, domain, 0.0f, 0.0f, 0.0f, 0.70f);
-                if (bg_color) {
-                    Set_Property_Invoke(panel_class, bg_panel, "BackgroundColor", bg_color);
-                }
-
+                if (bg_color) Set_Property_Invoke(panel_class, bg_panel, "BackgroundColor", bg_color);
                 Set_Property(panel_class, bg_panel, "BackgroundVisibility", true);
                 Set_Property(panel_class, bg_panel, "BackgroundOpacity", 1.0f);
                 Set_Property(panel_class, bg_panel, "BackgroundStyle", 1);
-
-                log_shellui("[SHELLUI] Background panel created. Appending to RootWidget...\n");
                 widget_append_child(widget_class, hud_container ? hud_container : root_widget, bg_panel);
 
-                /* Font: 18pt, bold=1, weight=900 */
                 MonoObject* hud_font = create_ui_font(pui_img, domain, 18, 1, 900);
-                log_shellui("[SHELLUI] Font created: %p\n", hud_font);
-
                 float y = 5.0f;
 
-                // FPS: #FFEB3B (Gold/Yellow)
-                create_hud_item(domain, pui_img, widget_class, panel_class, label_class, root_widget,
-                                "id_fps_lbl", 24.0f, y, "FPS", hud_font, 1.0f, 235.0f/255.0f, 59.0f/255.0f);
-                fps_val = create_hud_item(domain, pui_img, widget_class, panel_class, label_class, root_widget,
-                                          "id_fps_val", 68.0f, y, "--", hud_font, 1.0f, 1.0f, 1.0f);
-                create_hud_item(domain, pui_img, widget_class, panel_class, label_class, root_widget,
-                                "id_sep0", 116.0f, y, "|", hud_font, 0.75f, 0.75f, 0.75f);
-
-                // CPU: #66FF66
-                create_hud_item(domain, pui_img, widget_class, panel_class, label_class, root_widget,
-                                "id_cpu_lbl", 136.0f, y, "CPU", hud_font, 102.0f/255.0f, 1.0f, 102.0f/255.0f);
-                cpu_val = create_hud_item(domain, pui_img, widget_class, panel_class, label_class, root_widget,
-                                          "id_cpu_val", 184.0f, y, "--°C", hud_font, 1.0f, 1.0f, 1.0f);
-                create_hud_item(domain, pui_img, widget_class, panel_class, label_class, root_widget,
-                                "id_sep1", 250.0f, y, "|", hud_font, 0.75f, 0.75f, 0.75f);
-
-                // GPU: #B366FF
-                create_hud_item(domain, pui_img, widget_class, panel_class, label_class, root_widget,
-                                "id_gpu_lbl", 270.0f, y, "GPU", hud_font, 179.0f/255.0f, 102.0f/255.0f, 1.0f);
-                gpu_val = create_hud_item(domain, pui_img, widget_class, panel_class, label_class, root_widget,
-                                          "id_gpu_val", 318.0f, y, "--°C", hud_font, 1.0f, 1.0f, 1.0f);
-                create_hud_item(domain, pui_img, widget_class, panel_class, label_class, root_widget,
-                                "id_sep2", 382.0f, y, "|", hud_font, 0.75f, 0.75f, 0.75f);
-
-                // RAM: #FFB34D
-                create_hud_item(domain, pui_img, widget_class, panel_class, label_class, root_widget,
-                                "id_ram_lbl", 402.0f, y, "RAM", hud_font, 1.0f, 179.0f/255.0f, 77.0f/255.0f);
-                ram_val = create_hud_item(domain, pui_img, widget_class, panel_class, label_class, root_widget,
-                                          "id_ram_val", 456.0f, y, "-- GB", hud_font, 1.0f, 1.0f, 1.0f);
-                create_hud_item(domain, pui_img, widget_class, panel_class, label_class, root_widget,
-                                "id_sep3", 564.0f, y, "|", hud_font, 0.75f, 0.75f, 0.75f);
-
-                // FAN: #33E0FF
-                create_hud_item(domain, pui_img, widget_class, panel_class, label_class, root_widget,
-                                "id_fan_lbl", 584.0f, y, "FAN", hud_font, 51.0f/255.0f, 224.0f/255.0f, 1.0f);
-                fan_val = create_hud_item(domain, pui_img, widget_class, panel_class, label_class, root_widget,
-                                          "id_fan_val", 630.0f, y, "--%", hud_font, 1.0f, 1.0f, 1.0f);
+                create_hud_item(domain, pui_img, widget_class, panel_class, label_class, root_widget, "id_fps_lbl", 24.0f, y, "FPS", hud_font, 1.0f, 235.0f/255.0f, 59.0f/255.0f);
+                fps_val = create_hud_item(domain, pui_img, widget_class, panel_class, label_class, root_widget, "id_fps_val", 68.0f, y, "--", hud_font, 1.0f, 1.0f, 1.0f);
+                create_hud_item(domain, pui_img, widget_class, panel_class, label_class, root_widget, "id_sep0", 116.0f, y, "|", hud_font, 0.75f, 0.75f, 0.75f);
+                create_hud_item(domain, pui_img, widget_class, panel_class, label_class, root_widget, "id_cpu_lbl", 136.0f, y, "CPU", hud_font, 102.0f/255.0f, 1.0f, 102.0f/255.0f);
+                cpu_val = create_hud_item(domain, pui_img, widget_class, panel_class, label_class, root_widget, "id_cpu_val", 184.0f, y, "--°C", hud_font, 1.0f, 1.0f, 1.0f);
+                create_hud_item(domain, pui_img, widget_class, panel_class, label_class, root_widget, "id_sep1", 250.0f, y, "|", hud_font, 0.75f, 0.75f, 0.75f);
+                create_hud_item(domain, pui_img, widget_class, panel_class, label_class, root_widget, "id_gpu_lbl", 270.0f, y, "GPU", hud_font, 179.0f/255.0f, 102.0f/255.0f, 1.0f);
+                gpu_val = create_hud_item(domain, pui_img, widget_class, panel_class, label_class, root_widget, "id_gpu_val", 318.0f, y, "--°C", hud_font, 1.0f, 1.0f, 1.0f);
+                create_hud_item(domain, pui_img, widget_class, panel_class, label_class, root_widget, "id_sep2", 382.0f, y, "|", hud_font, 0.75f, 0.75f, 0.75f);
+                create_hud_item(domain, pui_img, widget_class, panel_class, label_class, root_widget, "id_ram_lbl", 402.0f, y, "RAM", hud_font, 1.0f, 179.0f/255.0f, 77.0f/255.0f);
+                ram_val = create_hud_item(domain, pui_img, widget_class, panel_class, label_class, root_widget, "id_ram_val", 456.0f, y, "-- GB", hud_font, 1.0f, 1.0f, 1.0f);
+                create_hud_item(domain, pui_img, widget_class, panel_class, label_class, root_widget, "id_sep3", 564.0f, y, "|", hud_font, 0.75f, 0.75f, 0.75f);
+                create_hud_item(domain, pui_img, widget_class, panel_class, label_class, root_widget, "id_fan_lbl", 584.0f, y, "FAN", hud_font, 51.0f/255.0f, 224.0f/255.0f, 1.0f);
+                fan_val = create_hud_item(domain, pui_img, widget_class, panel_class, label_class, root_widget, "id_fan_val", 630.0f, y, "--%", hud_font, 1.0f, 1.0f, 1.0f);
 
                 last_attached_scene = game_scene;
                 attached_to_game = true;
                 log_shellui("[SHELLUI] HUD attached to Game Scene RootWidget successfully!\n");
             }
         } else if (!game_scene && attached_to_game) {
-            /* Game closed */
             log_shellui("[SHELLUI] Game closed, waiting for next game...\n");
             attached_to_game = false;
             last_attached_scene = nullptr;
+            hud_container = nullptr;
+            s_hud_container = nullptr;
+            fps_val = nullptr;
+            cpu_val = nullptr;
+            gpu_val = nullptr;
+            ram_val = nullptr;
+            fan_val = nullptr;
         }
 
-        /* Live control: config.ini can enable/disable the HUD without reinjection. */
-        static bool last_enabled = true;
+        /*
+         * Live toggle: config.ini is the authoritative switch.
+         * Apply visibility every loop so the state cannot become stale.
+         */
         bool enabled_now = read_overlay_enabled();
+        if (hud_container) {
+            Set_Property(panel_class, hud_container, "Visibility", enabled_now);
+        }
+
         if (enabled_now != last_enabled) {
-            if (hud_container) Set_Property(panel_class, hud_container, "Visibility", enabled_now);
             log_shellui("[SHELLUI] Live overlay state changed: %s\n", enabled_now ? "ENABLED" : "DISABLED");
             last_enabled = enabled_now;
         }
 
-        /* Update sensors only while the HUD is enabled. */
         if (attached_to_game && enabled_now) {
             float fps = get_fps_reading();
-
             int cpu_temp = 0;
-            if (sys_sceKernelGetCpuTemperature) {
-                sys_sceKernelGetCpuTemperature(&cpu_temp);
-            }
+            if (sys_sceKernelGetCpuTemperature) sys_sceKernelGetCpuTemperature(&cpu_temp);
 
             int gpu_temp = 0;
-            if (sys_sceKernelGetSocSensorTemperature) {
-                sys_sceKernelGetSocSensorTemperature(0, &gpu_temp);
-            }
+            if (sys_sceKernelGetSocSensorTemperature) sys_sceKernelGetSocSensorTemperature(0, &gpu_temp);
 
             uint16_t fan_duty = 0;
             uint64_t chassis = 0;
             double fan_pct = 0.0;
-            if (sys_sceKernelGetCurrentFanDuty && sys_sceKernelGetCurrentFanDuty(&fan_duty, &chassis) == 0) {
+            if (sys_sceKernelGetCurrentFanDuty && sys_sceKernelGetCurrentFanDuty(&fan_duty, &chassis) == 0)
                 fan_pct = ((double)fan_duty * 100.0) / 1024.0;
-            }
 
             char buf[32];
             if (fps_val) {
-                if (fps > 0.5f) {
-                    snprintf(buf, sizeof(buf), "%.0f", fps);
-                } else {
-                    snprintf(buf, sizeof(buf), "--");
-                }
+                snprintf(buf, sizeof(buf), fps > 0.5f ? "%.0f" : "--", fps);
                 Set_Property(label_class, fps_val, "Text", mono_string_new(domain, buf));
             }
-
             if (cpu_val) {
                 snprintf(buf, sizeof(buf), "%d°C", cpu_temp);
                 Set_Property(label_class, cpu_val, "Text", mono_string_new(domain, buf));
             }
-
             if (gpu_val) {
                 snprintf(buf, sizeof(buf), "%d°C", gpu_temp);
                 Set_Property(label_class, gpu_val, "Text", mono_string_new(domain, buf));
             }
-
             if (ram_val) {
-                int ram_total = 0, ram_free = 0;
+                int ram_total = 0;
+                int ram_free = 0;
                 if (sys_get_page_table_stats && sys_get_page_table_stats(1, 1, &ram_total, &ram_free) == 0 && ram_total > 0) {
                     int used_mb = ram_total - ram_free;
                     snprintf(buf, sizeof(buf), "%.1f/16 GB", (float)used_mb / 1024.0f);
@@ -613,7 +527,6 @@ int main(int argc, const char* argv[]) {
                 }
                 Set_Property(label_class, ram_val, "Text", mono_string_new(domain, buf));
             }
-
             if (fan_val) {
                 snprintf(buf, sizeof(buf), "%.0f%%", fan_pct);
                 Set_Property(label_class, fan_val, "Text", mono_string_new(domain, buf));
