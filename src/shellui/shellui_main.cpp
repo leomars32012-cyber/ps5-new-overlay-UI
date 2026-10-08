@@ -476,16 +476,34 @@ int main(int argc, const char* argv[]) {
         }
 
         /*
-         * Live toggle: config.ini is the authoritative switch.
-         * Apply visibility every loop so the state cannot become stale.
+         * Persistent toggle lifecycle:
+         * config.ini is the authoritative state, but we do not try to
+         * manipulate the HUD during gameplay. When disabled, remove the
+         * complete HUD container from the Game scene. The next game launch
+         * will recreate it only if the persisted setting is enabled.
          */
         bool enabled_now = read_overlay_enabled();
-        if (hud_container) {
-            Set_Property(panel_class, hud_container, "Visibility", enabled_now);
+        if (!enabled_now && hud_container) {
+            MonoMethod* remove_from_parent = mono_class_get_method_from_name(widget_class, "RemoveFromParent", 0);
+            if (remove_from_parent) {
+                mono_runtime_invoke(remove_from_parent, hud_container, nullptr, nullptr);
+                log_shellui("[SHELLUI] HUD removed from Game scene because overlay is disabled.\\n");
+            } else {
+                log_shellui("[SHELLUI] RemoveFromParent method not found; HUD cannot be detached.\\n");
+            }
+
+            hud_container = nullptr;
+            s_hud_container = nullptr;
+            fps_val = nullptr;
+            cpu_val = nullptr;
+            gpu_val = nullptr;
+            ram_val = nullptr;
+            fan_val = nullptr;
+            attached_to_game = false;
         }
 
         if (enabled_now != last_enabled) {
-            log_shellui("[SHELLUI] Live overlay state changed: %s\n", enabled_now ? "ENABLED" : "DISABLED");
+            log_shellui("[SHELLUI] Persistent overlay state changed: %s\\n", enabled_now ? "ENABLED" : "DISABLED");
             last_enabled = enabled_now;
         }
 
