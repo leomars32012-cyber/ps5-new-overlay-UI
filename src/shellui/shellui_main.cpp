@@ -262,6 +262,8 @@ static void widget_append_child(MonoClass* widget_class, MonoObject* parent, Mon
     }
 }
 
+static MonoObject* s_hud_container = nullptr;
+
 static MonoObject* create_hud_item(MonoDomain* domain, MonoImage* pui_img,
                                    MonoClass* widget_class, MonoClass* panel_class, MonoClass* label_class,
                                    MonoObject* root, const char* name, float x, float y,
@@ -280,7 +282,7 @@ static MonoObject* create_hud_item(MonoDomain* domain, MonoImage* pui_img,
     Set_Property(panel_class, cell, "Width", 300.0f);
     Set_Property(panel_class, cell, "Height", 34.0f);
     Set_Property(panel_class, cell, "BackgroundVisibility", false);
-    widget_append_child(widget_class, root, cell);
+    widget_append_child(widget_class, s_hud_container ? s_hud_container : root, cell);
 
     /* 2. Label inside container cell */
     MonoObject* label = mono_object_new(domain, label_class);
@@ -311,6 +313,28 @@ static MonoObject* create_hud_item(MonoDomain* domain, MonoImage* pui_img,
 
     widget_append_child(widget_class, cell, label);
     return label;
+}
+
+static bool read_overlay_enabled(void) {
+    FILE* fp = fopen("/data/ps5_overlay/config.ini", "r");
+    if (!fp) return true;
+    bool enabled = true;
+    char line[256];
+    while (fgets(line, sizeof(line), fp)) {
+        char* p = line;
+        while (*p == ' ' || *p == '\t') p++;
+        if (strncasecmp(p, "enabled", 7) != 0) continue;
+        p += 7;
+        while (*p == ' ' || *p == '\t') p++;
+        if (*p != '=') continue;
+        p++;
+        while (*p == ' ' || *p == '\t') p++;
+        if (strncasecmp(p, "false", 5) == 0 || strncasecmp(p, "off", 3) == 0 || p[0] == '0' || strncasecmp(p, "no", 2) == 0) enabled = false;
+        else if (strncasecmp(p, "true", 4) == 0 || strncasecmp(p, "on", 2) == 0 || p[0] == '1' || strncasecmp(p, "yes", 3) == 0) enabled = true;
+        break;
+    }
+    fclose(fp);
+    return enabled;
 }
 
 static float get_fps_reading(void) {
@@ -414,6 +438,7 @@ int main(int argc, const char* argv[]) {
 
     log_shellui("[SHELLUI] Overlay ready! Entering game monitoring loop...\n");
 
+    MonoObject* hud_container = nullptr;
     MonoObject* bg_panel = nullptr;
     MonoObject* fps_val = nullptr;
     MonoObject* cpu_val = nullptr;
@@ -437,6 +462,20 @@ int main(int argc, const char* argv[]) {
             if (root_widget) {
                 log_shellui("[SHELLUI] Game RootWidget: %p. Creating HUD widgets...\n", root_widget);
 
+                /* Parent container lets the complete HUD be hidden/shown live. */
+                hud_container = mono_object_new(domain, panel_class);
+                if (hud_container) {
+                    mono_runtime_object_init(hud_container);
+                    Set_Property(panel_class, hud_container, "Name", mono_string_new(domain, "ps5_overlay_container"));
+                    Set_Property(panel_class, hud_container, "X", 0.0f);
+                    Set_Property(panel_class, hud_container, "Y", 0.0f);
+                    Set_Property(panel_class, hud_container, "Width", 1920.0f);
+                    Set_Property(panel_class, hud_container, "Height", 40.0f);
+                    Set_Property(panel_class, hud_container, "Visibility", read_overlay_enabled());
+                    widget_append_child(widget_class, root_widget, hud_container);
+                    s_hud_container = hud_container;
+                }
+
                 /* Create HUD background panel */
                 bg_panel = mono_object_new(domain, panel_class);
                 mono_runtime_object_init(bg_panel);
@@ -457,7 +496,7 @@ int main(int argc, const char* argv[]) {
                 Set_Property(panel_class, bg_panel, "BackgroundStyle", 1);
 
                 log_shellui("[SHELLUI] Background panel created. Appending to RootWidget...\n");
-                widget_append_child(widget_class, root_widget, bg_panel);
+                widget_append_child(widget_class, hud_container ? hud_container : root_widget, bg_panel);
 
                 /* Font: 18pt, bold=1, weight=900 */
                 MonoObject* hud_font = create_ui_font(pui_img, domain, 18, 1, 900);
@@ -514,8 +553,17 @@ int main(int argc, const char* argv[]) {
             last_attached_scene = nullptr;
         }
 
-        /* Update metrics if attached */
-        if (attached_to_game) {
+        /* Live control: config.ini can enable/disable the HUD without reinjection. */
+        static bool last_enabled = true;
+        bool enabled_now = read_overlay_enabled();
+        if (enabled_now != last_enabled) {
+            if (hud_container) Set_Property(panel_class, hud_container, "Visibility", enabled_now);
+            log_shellui("[SHELLUI] Live overlay state changed: %s\n", enabled_now ? "ENABLED" : "DISABLED");
+            last_enabled = enabled_now;
+        }
+
+        /* Update sensors only while the HUD is enabled. */
+        if (attached_to_game && enabled_now) {
             float fps = get_fps_reading();
 
             int cpu_temp = 0;
