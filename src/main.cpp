@@ -96,8 +96,11 @@ static bool toggle_existing_daemon(void) {
            config.enabled ? "ENABLED" : "DISABLED",
            (int)existing_pid);
 
-    notify_send_hud("PS5 Overlay",
-                    config.enabled ? "Overlay ENABLED" : "Overlay DISABLED");
+    bool toast_sent = notify_send_hud("PS5 Overlay",
+                                      config.enabled ? "Overlay ENABLED" : "Overlay DISABLED");
+    if (!toast_sent) {
+        fprintf(stderr, "[TOGGLE] State saved, but sceNotificationSend did not confirm the toast.\\n");
+    }
     return true;
 }
 
@@ -222,6 +225,16 @@ int main(int argc, char** argv) {
     time_t last_toast_time = 0;
 
     while (s_running) {
+        /*
+         * config.ini is the shared source of truth. Reload it while resident
+         * so a second launcher invocation is reflected by the daemon too.
+         * ShellUI independently reads this same file for immediate teardown.
+         */
+        OverlayConfig latest_config{};
+        if (config_load(&latest_config, PS5_OVERLAY_DEFAULT_CONFIG_PATH)) {
+            config = latest_config;
+        }
+
         if (monitor_update(&metrics)) {
             monitor_format_hud_string(&metrics, &config, hud_text, sizeof(hud_text));
             monitor_format_hud_lines(&metrics, &config, hud_line1, sizeof(hud_line1), hud_line2, sizeof(hud_line2));
