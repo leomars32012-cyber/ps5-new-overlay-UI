@@ -39,6 +39,16 @@ target_sources(fps_monitor_shellui PRIVATE
 	"${D_SHELLUI}/src/overlay_layout_apply.cpp"
 )
 onion_target_debug_define(fps_monitor_shellui)
+
+option(PS5_OVERLAY_PERF_DIAGNOSTICS
+  "Enable temporary HUD performance counters in the ShellUI module" OFF)
+if(PS5_OVERLAY_PERF_DIAGNOSTICS)
+  target_compile_definitions(fps_monitor_shellui PRIVATE
+    PS5_OVERLAY_PERF_DIAGNOSTICS=1)
+  message(STATUS "HUD performance diagnostics: ENABLED (ShellUI only)")
+else()
+  message(STATUS "HUD performance diagnostics: disabled")
+endif()
 target_include_directories(fps_monitor_shellui PRIVATE
 	"${D_SHELLUI}/include"
 	"${FPSMON_THIRD_PARTY_DIR}/cjson"
