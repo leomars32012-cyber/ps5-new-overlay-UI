@@ -1,0 +1,10 @@
+{
+  "meta": {
+    "id": "pt-BR",
+    "bcp47": "pt-BR",
+    "fallback": false
+  },
+  "notifications": {
+    "notify.brand": "FPS Monitor"
+  }
+}

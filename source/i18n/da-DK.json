@@ -1,0 +1,10 @@
+{
+  "meta": {
+    "id": "da",
+    "bcp47": "da-DK",
+    "fallback": false
+  },
+  "notifications": {
+    "notify.brand": "FPS Monitor"
+  }
+}

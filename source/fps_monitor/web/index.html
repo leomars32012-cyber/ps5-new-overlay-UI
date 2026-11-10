@@ -1,0 +1,680 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>FPS Monitor</title>
+<style>
+/* Served by fps-monitor.elf on port 1994. Offline and self-contained; targets old WebKit (PS5 browser), so no flex gap, color-mix, :has or aspect-ratio. */
+:root {
+  --bg: #EEF1F5; --surface: #FFFFFF; --sunken: #E2E7EE; --line: #D3DAE3;
+  --fg: #121821; --muted: #586474; --accent: #1C68A8; --accent-fg: #FFFFFF;
+  --warn: #8F5400; --warn-bg: #FFEFD2; --ok: #1F7A4D;
+  --ok-ring: rgba(31, 122, 77, .22); --ok-bg: rgba(31, 122, 77, .14);
+  --knob: #FFFFFF; --switch-off: #B4BECB;
+  --shadow: 0 1px 2px rgba(18, 24, 33, .06), 0 10px 28px rgba(18, 24, 33, .07);
+  --bar-bg: rgba(255, 255, 255, .92);
+  /* The TV picture behind the preview: the same in both themes. */
+  --sky-top: #1B2440; --sky-mid: #6B4E7A; --sky-low: #E08B5A;
+  --sun: #FFD9A0; --sun-glow: rgba(255, 217, 160, .45);
+  --hill-far: #2B2D45; --hill-near: #15182A;
+  --font-display: "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-body: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --radius: 14px;
+  --gap: 16px;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0C0F14; --surface: #141920; --sunken: #0E1217; --line: #252D38;
+    --fg: #E6EBF0; --muted: #8C98A7; --accent: #5AA9E6; --accent-fg: #06121D;
+    --warn: #F5B13D; --warn-bg: #2B2110; --ok: #4CC38A;
+    --ok-ring: rgba(76, 195, 138, .22); --ok-bg: rgba(76, 195, 138, .14);
+    --knob: #E6EBF0; --switch-off: #3A4350; --shadow: 0 1px 0 rgba(255, 255, 255, .03);
+    --bar-bg: rgba(20, 25, 32, .94);
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font-family: var(--font-body); font-size: 15px; line-height: 1.45;
+  -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: 100%;
+}
+.app {
+  max-width: 1180px; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-top: calc(16px + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(104px + env(safe-area-inset-bottom, 0px));
+  display: grid; grid-template-columns: minmax(0, 1fr); grid-gap: var(--gap); gap: var(--gap);
+}
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+
+/* Header */
+.top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+.top > * { margin: 4px 0; }
+.brand { display: flex; align-items: center; margin-right: 16px; }
+.brand svg { width: 30px; height: 30px; flex: none; margin-right: 10px; }
+.brand h1 { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 22px; letter-spacing: .01em; line-height: 1; }
+.brand small { display: block; color: var(--muted); font-size: 12.5px; margin-top: 3px; }
+.conn {
+  display: inline-flex; align-items: center; padding: 6px 12px; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--line); font-size: 13px; color: var(--muted);
+}
+.conn b { color: var(--fg); font-weight: 500; font-variant-numeric: tabular-nums; margin: 0 4px; }
+#conn-state { margin-left: 4px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; background: var(--switch-off); }
+.conn.on .dot { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-ring); }
+
+.banner {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  padding: 12px 16px; border-radius: var(--radius); border: 1px solid var(--line);
+  background: var(--surface); color: var(--muted); font-size: 14px;
+}
+.banner.error { background: var(--warn-bg); color: var(--warn); border-color: transparent; font-weight: 500; }
+.banner span { margin: 4px 12px 4px 0; }
+.banner .btn { margin-left: 0; }
+
+/* Columns */
+.cols { display: grid; grid-gap: var(--gap); gap: var(--gap); grid-template-columns: minmax(0, 1fr); }
+.col { display: grid; grid-gap: var(--gap); gap: var(--gap); min-width: 0; align-content: start; }
+@media (min-width: 880px) {
+  .cols { grid-template-columns: minmax(0, 1.08fr) minmax(0, 1fr); align-items: start; }
+}
+/* Stick only when the column fits above the save bar (not on landscape phones). */
+@media (min-width: 880px) and (min-height: 560px) {
+  .col-preview { position: -webkit-sticky; position: sticky; top: calc(16px + env(safe-area-inset-top, 0px)); }
+}
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
+
+/* Master switch */
+.master { display: flex; align-items: center; justify-content: space-between; padding: 18px 18px 18px 20px; }
+.master .switch { margin-left: 16px; }
+.master h2 { margin: 0; font-family: var(--font-display); font-size: 20px; font-weight: 700; }
+.master p { margin: 2px 0 0; color: var(--muted); font-size: 13.5px; }
+.master .state { font-family: var(--font-mono); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; padding: 2px 7px; border-radius: 6px; margin-left: 8px; vertical-align: 3px; }
+.master .state.on { color: var(--ok); background: var(--ok-bg); }
+.master .state.off { color: var(--muted); background: var(--sunken); }
+
+/* Switch */
+.switch {
+  position: relative; flex: none; width: 52px; height: 30px; border-radius: 999px;
+  border: 0; padding: 0; cursor: pointer; background: var(--switch-off);
+  transition: background .18s ease;
+}
+.switch::after {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%;
+  background: var(--knob); box-shadow: 0 1px 3px rgba(0, 0, 0, .3); transition: transform .18s ease;
+}
+.switch[aria-checked="true"] { background: var(--accent); }
+.switch[aria-checked="true"]::after { transform: translateX(22px); background: var(--accent-fg); }
+.switch.big { width: 64px; height: 36px; }
+.switch.big::after { width: 30px; height: 30px; }
+.switch.big[aria-checked="true"]::after { transform: translateX(28px); }
+.switch:disabled { opacity: .45; cursor: not-allowed; }
+
+/* Preview: 16:9 via padding-top (no aspect-ratio in old WebKit) */
+.preview { padding: 12px; display: grid; grid-gap: 10px; gap: 10px; }
+.screen {
+  position: relative; width: 100%; height: 0; padding-top: 56.25%; overflow: hidden;
+  border-radius: 9px; background:
+    radial-gradient(circle at 70% 64%, var(--sun) 0, var(--sun) 4%, transparent 4.3%),
+    radial-gradient(ellipse at 70% 68%, var(--sun-glow) 0, transparent 38%),
+    linear-gradient(180deg, var(--sky-top) 0%, var(--sky-mid) 48%, var(--sky-low) 72%);
+}
+.screen::before, .screen::after { content: ""; position: absolute; left: -5%; right: -5%; bottom: 0; }
+.screen::before { height: 34%; background: var(--hill-far);
+  -webkit-clip-path: polygon(0 55%, 14% 30%, 27% 48%, 41% 18%, 55% 44%, 68% 26%, 82% 46%, 100% 22%, 100% 100%, 0 100%);
+  clip-path: polygon(0 55%, 14% 30%, 27% 48%, 41% 18%, 55% 44%, 68% 26%, 82% 46%, 100% 22%, 100% 100%, 0 100%); }
+.screen::after { height: 22%; background: var(--hill-near);
+  -webkit-clip-path: polygon(0 40%, 18% 62%, 35% 30%, 52% 58%, 70% 36%, 86% 60%, 100% 42%, 100% 100%, 0 100%);
+  clip-path: polygon(0 40%, 18% 62%, 35% 30%, 52% 58%, 70% 36%, 86% 60%, 100% 42%, 100% 100%, 0 100%); }
+.stage { position: absolute; left: 0; top: 0; width: 960px; height: 540px; transform-origin: 0 0; z-index: 2; }
+.hidden-chip {
+  position: absolute; top: 0; right: 0; bottom: 0; left: 0; z-index: 3;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: #fff;
+}
+.hidden-chip span { background: rgba(0, 0, 0, .55); padding: 6px 12px; border-radius: 999px; }
+.preview-cap { display: flex; flex-wrap: wrap; justify-content: space-between; font-size: 12.5px; color: var(--muted); padding: 0 4px; }
+.preview-cap span { margin-right: 12px; }
+.preview-cap code { font-family: var(--font-mono); font-size: 11.5px; }
+
+/* Overlay drawn inside the preview (uses the overlay's own palette, set inline per theme) */
+.ov { position: absolute; font-family: var(--font-body); color: var(--o-text); font-variant-numeric: tabular-nums; line-height: 1.2; }
+.ov-box { background: rgba(var(--o-surface), var(--o-alpha)); border-radius: .5em; overflow: hidden; }
+.ov-box.acc-left { border-left: .28em solid var(--o-good); }
+.ov-box.acc-top::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: .22em; background: linear-gradient(90deg, var(--o-good), var(--o-warn)); }
+.ov-pill { padding: .35em .7em; font-weight: 600; white-space: nowrap; }
+.ov-pill b { font-size: 1.25em; }
+.ov-pill span { color: var(--o-label); font-size: .78em; margin-left: .3em; letter-spacing: .06em; }
+.ov-strip { display: flex; align-items: baseline; padding: .4em .85em; white-space: nowrap; }
+.ov-strip > * + * { margin-left: .9em; }
+.ov-strip .k { color: var(--o-label); font-size: .74em; letter-spacing: .06em; margin-right: .3em; }
+.ov-strip b { font-size: 1.15em; }
+.ov-panel { width: 17.5em; padding: .75em .85em .8em; }
+.ov-panel > * + * { margin-top: .5em; }
+.ov-head { display: flex; align-items: flex-end; }
+.ov-fps { font-size: 2.6em; font-weight: 600; line-height: .9; color: var(--o-text); }
+.ov-unit { color: var(--o-label); font-size: .78em; letter-spacing: .08em; padding-bottom: .2em; margin-left: .45em; }
+.ov-al { margin-left: auto; text-align: right; font-size: .8em; color: var(--o-heading); }
+.ov-al span { color: var(--o-label); margin-right: .35em; font-size: .9em; letter-spacing: .06em; }
+.ov-row { display: flex; justify-content: space-between; font-size: .8em; color: var(--o-heading); }
+.ov-row span { color: var(--o-label); letter-spacing: .06em; }
+.ov-chart { display: block; width: 100%; height: 2.6em; }
+.ov-stab { height: .32em; border-radius: 1em; background: rgba(255, 255, 255, .10); overflow: hidden; }
+.ov-stab i { display: block; height: 100%; width: 92%; background: var(--o-good); }
+.ov-sys { display: flex; justify-content: space-between; font-size: .78em; padding-top: .45em; border-top: 1px solid rgba(255, 255, 255, .09); }
+.ov-sys span { color: var(--o-label); margin-right: .3em; letter-spacing: .05em; }
+.ov-graph { left: 50%; transform: translateX(-50%); width: 44%; padding: .35em .5em; }
+.ov-graph svg { display: block; width: 100%; height: 2.4em; }
+
+/* Settings */
+.group { padding: 6px 0; }
+.group > h3 {
+  margin: 0; padding: 12px 18px 6px; font-size: 12px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .09em; color: var(--muted);
+}
+.item { padding: 12px 18px; display: grid; grid-gap: 10px; gap: 10px; }
+.item + .item { border-top: 1px solid var(--line); }
+.item.bool { display: flex; align-items: center; justify-content: space-between; }
+.item.bool .switch { margin-left: 16px; }
+.item.is-off { opacity: .5; }
+.lab { min-width: 0; }
+.lab .name { display: block; font-weight: 500; font-size: 15px; }
+.lab p { margin: 1px 0 0; color: var(--muted); font-size: 13px; }
+.key { font-family: var(--font-mono); font-size: 11px; color: var(--muted); margin-left: 6px; font-weight: 400; white-space: nowrap; }
+.changed-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); margin-left: 6px; vertical-align: 2px; }
+
+.seg { display: flex; padding: 3px; background: var(--sunken); border: 1px solid var(--line); border-radius: 11px; }
+.seg button {
+  flex: 1 1 0; min-width: 0; min-height: 40px; border: 0; border-radius: 8px; background: transparent;
+  color: var(--muted); font-size: 14px; font-weight: 500; cursor: pointer; padding: 0 6px;
+  font-variant-numeric: tabular-nums; text-transform: capitalize;
+  transition: background .15s ease, color .15s ease;
+}
+.seg button + button { margin-left: 3px; }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--fg); box-shadow: 0 1px 3px rgba(0, 0, 0, .12), inset 0 0 0 1px var(--line); }
+.seg button:disabled { cursor: not-allowed; }
+
+.themes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-gap: 8px; gap: 8px; }
+.theme-btn {
+  border: 1px solid var(--line); background: var(--surface); border-radius: 11px; padding: 6px 6px 8px; cursor: pointer;
+  display: grid; grid-gap: 6px; gap: 6px; font-size: 13px; font-weight: 500; color: var(--muted);
+}
+.theme-btn[aria-pressed="true"] { border-color: var(--accent); color: var(--fg); box-shadow: inset 0 0 0 1px var(--accent); }
+.theme-btn:disabled { cursor: not-allowed; }
+.swatch { position: relative; display: block; height: 38px; border-radius: 7px; overflow: hidden; }
+.swatch i { position: absolute; left: 22%; right: 10%; height: 2px; border-radius: 2px; }
+.swatch i:nth-of-type(1) { top: 40%; }
+.swatch i:nth-of-type(2) { top: 62%; right: 34%; opacity: .7; }
+.swatch .accl { position: absolute; left: 0; top: 0; bottom: 0; width: 4px; }
+.swatch .acct { position: absolute; left: 0; right: 0; top: 0; height: 4px; }
+
+/* config.ini */
+.ini summary { cursor: pointer; padding: 14px 18px; font-weight: 500; display: flex; justify-content: space-between; align-items: center; list-style: none; }
+.ini summary::-webkit-details-marker { display: none; }
+.ini summary::after { content: "+"; font-family: var(--font-mono); color: var(--muted); margin-left: 12px; }
+.ini[open] summary::after { content: "\2212"; }
+.ini summary span { color: var(--muted); font-weight: 400; font-family: var(--font-mono); font-size: 12px; margin-left: auto; }
+.ini-body { padding: 0 18px 16px; display: grid; grid-gap: 12px; gap: 12px; }
+.ini-body p { margin: 0; color: var(--muted); font-size: 13px; }
+.ini pre {
+  margin: 0; padding: 12px 14px; overflow-x: auto; background: var(--sunken); border: 1px solid var(--line); border-radius: 9px;
+  font-family: var(--font-mono); font-size: 12.5px; line-height: 1.6;
+}
+.ini pre .sec { color: var(--accent); }
+.ini pre .chg { background: var(--warn-bg); color: var(--warn); }
+.linkbtn { justify-self: start; background: none; border: 0; padding: 4px 0; color: var(--accent); font-weight: 500; cursor: pointer; }
+.linkbtn:disabled { opacity: .45; cursor: not-allowed; }
+
+/* Save bar */
+.savebar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+  background: var(--bar-bg); border-top: 1px solid var(--line);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-top: 12px; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+}
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .savebar { -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+}
+.savebar-in { max-width: 1180px; margin: 0 auto; display: flex; align-items: center; }
+.savebar .msg { flex: 1; min-width: 0; font-size: 14px; color: var(--muted); }
+.savebar .msg.dirty { color: var(--warn); font-weight: 500; }
+.btn { min-height: 44px; padding: 0 18px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); font-weight: 600; cursor: pointer; white-space: nowrap; margin-left: 10px; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+
+.toast {
+  position: fixed; left: 50%; z-index: 30; bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+  transform: translate(-50%, 12px); opacity: 0; pointer-events: none;
+  background: var(--fg); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-size: 14px;
+  width: max-content; max-width: calc(100% - 32px); transition: opacity .2s ease, transform .2s ease;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+@media (max-width: 420px) {
+  .seg button { font-size: 13px; }
+  .savebar .msg { font-size: 13px; }
+  .btn { padding: 0 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <svg viewBox="0 0 30 30" aria-hidden="true">
+        <rect width="30" height="30" rx="8" style="fill:var(--fg)"/>
+        <rect x="6" y="15" width="3.2" height="9" rx="1" style="fill:var(--bg)"/>
+        <rect x="11.2" y="10" width="3.2" height="14" rx="1" style="fill:var(--bg)"/>
+        <rect x="16.4" y="13" width="3.2" height="11" rx="1" style="fill:var(--bg)"/>
+        <rect x="21.6" y="6" width="3.2" height="18" rx="1" fill="#5AA9E6"/>
+      </svg>
+      <div><h1>FPS Monitor</h1><small>Overlay settings</small></div>
+    </div>
+    <div class="conn" id="conn"><span class="dot" aria-hidden="true"></span>PS5 <b id="conn-host"></b> · <span id="conn-state">Connecting…</span></div>
+  </header>
+
+  <div class="banner" id="banner" role="status"><span id="banner-text">Loading settings from the console…</span><button class="btn" id="retry" hidden>Retry</button></div>
+
+  <fieldset id="main" disabled>
+  <div class="cols">
+    <div class="col col-preview">
+      <section class="card master" aria-labelledby="master-title">
+        <div>
+          <h2 id="master-title">FPS overlay <span class="state on" id="master-state">On</span></h2>
+          <p id="master-sub">Showing in games. This switch applies right away.</p>
+        </div>
+        <button class="switch big" id="t-enabled" role="switch" aria-checked="true" aria-labelledby="master-title"></button>
+      </section>
+
+      <section class="card preview" aria-label="Overlay preview">
+        <div class="screen" id="screen">
+          <div class="stage" id="stage"></div>
+          <div class="hidden-chip" id="hidden-chip" hidden><span>Overlay hidden</span></div>
+        </div>
+        <div class="preview-cap"><span>Live preview of unsaved settings</span><code id="cap-pos">top · left · 20 px</code></div>
+      </section>
+    </div>
+
+    <div class="col" id="settings"></div>
+  </div>
+  </fieldset>
+</div>
+
+<div class="savebar">
+  <div class="savebar-in">
+    <div class="msg" id="save-msg" aria-live="polite">All changes saved to the PS5</div>
+    <button class="btn" id="discard" disabled>Discard</button>
+    <button class="btn primary" id="save" disabled>Save</button>
+  </div>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(function () {
+  'use strict';
+  // Defaults per config.ini.example.
+  const DEFAULTS = {
+    enabled: true, edge: 'top', align: 'left', font_size: 'medium', detail: 'panel',
+    opacity: 85, theme: 'classic', fps_pill: false, system: true,
+    frame_graph: true, frame_graph_opacity: 85, margin: 20
+  };
+  const INI_ORDER = Object.keys(DEFAULTS);
+
+  // Overlay palettes from source/shellui/include/overlay_scene.hpp
+  const PALETTES = {
+    classic: { surface: '11,14,19', text: '#EEF2F5', heading: '#C9D0D6', label: '#A7B0B8', good: '#5AA9E6', warn: '#F5B13D', bad: '#FF7A59', accent: null },
+    mono:    { surface: '10,12,15', text: '#EEF2F5', heading: '#C9D0D6', label: '#A7B0B8', good: 'rgba(238,242,245,.55)', warn: '#F5B13D', bad: '#F2545B', accent: null },
+    aurora:  { surface: '8,12,22',  text: '#E6FBFF', heading: '#A5F3FC', label: '#CBD5E1', good: '#22D3EE', warn: '#FBBF24', bad: '#FB7185', accent: 'left' },
+    vice:    { surface: '21,10,36', text: '#FDF2F8', heading: '#E9D5FF', label: '#C4B5FD', good: '#FF4FA3', warn: '#FF8A3D', bad: '#FF3344', accent: 'top' }
+  };
+
+  const SCHEMA = [
+    { title: 'Position', items: [
+      { key: 'edge', label: 'Screen edge', type: 'seg', options: ['top', 'bottom'] },
+      { key: 'align', label: 'Alignment', hint: 'Where on that edge the overlay sits', type: 'seg', options: ['left', 'center', 'right'] },
+      { key: 'margin', label: 'Margin', hint: 'Gap from the screen edges', type: 'seg', options: [0, 5, 10, 20], unit: ' px' }
+    ]},
+    { title: 'Look', items: [
+      { key: 'detail', label: 'Detail', hint: 'An FPS pill, one strip, or the corner panel. Full is the same as panel for now.', type: 'seg', options: ['minimal', 'compact', 'panel', 'full'] },
+      { key: 'theme', label: 'Theme', type: 'theme', options: ['classic', 'mono', 'aurora', 'vice'] },
+      { key: 'font_size', label: 'Text size', type: 'seg', options: ['small', 'medium', 'large'] },
+      { key: 'opacity', label: 'Background opacity', hint: '0 hides the background', type: 'seg', options: [0, 40, 65, 85], unit: '%' }
+    ]},
+    { title: 'Panel contents', items: [
+      { key: 'system', label: 'System row', hint: 'CPU, GPU and memory under the charts', type: 'bool' },
+      { key: 'frame_graph', label: 'Frame-time graph', hint: '7.5 s graph centred on the opposite edge', type: 'bool' },
+      { key: 'frame_graph_opacity', label: 'Graph background opacity', type: 'seg', options: [0, 40, 65, 85], unit: '%', dependsOn: 'frame_graph' },
+      { key: 'fps_pill', label: 'Extra FPS pill', hint: 'Also shows the FPS pill in the opposite corner', type: 'bool' }
+    ]}
+  ];
+
+  const copy = (o) => Object.assign({}, o);
+  const norm = (j) => Object.assign({}, DEFAULTS, j);
+  let saved = copy(DEFAULTS);
+  let draft = copy(saved);
+  let loaded = false; // the console answered at least once: until then, show no made-up settings
+  let ready = false; // config loaded from the console
+  let busy = false;  // a POST is in flight
+
+  const $ = (id) => document.getElementById(id);
+  const settingsEl = $('settings');
+  const controls = [];
+
+  // ---------- API ----------
+  function setConn(on) {
+    $('conn').className = 'conn' + (on ? ' on' : '');
+    $('conn-state').textContent = on ? 'Connected' : 'Not connected';
+  }
+
+  function formEncode(keys, values) {
+    return keys.map((k) => k + '=' + encodeURIComponent(String(values[k]))).join('&');
+  }
+
+  async function api(body) {
+    const opts = { method: body === undefined ? 'GET' : 'POST', headers: {} };
+    if (body !== undefined) {
+      opts.headers['X-FPSMon'] = '1';
+      opts.headers['Content-Type'] = 'application/x-www-form-urlencoded';
+      opts.body = body;
+    }
+    let r;
+    try {
+      r = await fetch('/api/config', opts);
+    } catch (e) {
+      setConn(false);
+      throw new Error("Can't reach the FPS Monitor on this console.");
+    }
+    setConn(true);
+    let j = {};
+    try { j = await r.json(); } catch (e) { /* non-JSON body */ }
+    if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+    return norm(j);
+  }
+
+  async function load() {
+    ready = false;
+    $('banner').className = 'banner';
+    $('banner-text').textContent = 'Loading settings from the console…';
+    $('retry').hidden = true;
+    $('banner').hidden = false;
+    render();
+    try {
+      saved = await api();
+      draft = copy(saved);
+      ready = loaded = true;
+      $('banner').hidden = true;
+    } catch (e) {
+      $('banner').className = 'banner error';
+      $('banner-text').textContent = "Can't reach the FPS Monitor on this console. Make sure fps-monitor.elf is running.";
+      $('retry').hidden = false;
+    }
+    render();
+  }
+
+  // ---------- Build settings UI ----------
+  SCHEMA.forEach((group) => {
+    const card = document.createElement('section');
+    card.className = 'card group';
+    card.innerHTML = '<h3>' + group.title + '</h3>';
+    group.items.forEach((it) => {
+      const row = document.createElement('div');
+      row.className = 'item' + (it.type === 'bool' ? ' bool' : '');
+      const id = 'f-' + it.key;
+      const lab = document.createElement('div');
+      lab.className = 'lab';
+      lab.innerHTML = `<span class="name" id="${id}-l">${it.label}<span class="key">overlay.${it.key}</span><span class="changed-dot" id="${id}-dot" hidden title="Unsaved"></span></span>` +
+        (it.hint ? `<p>${it.hint}</p>` : '');
+      row.appendChild(lab);
+
+      if (it.type === 'bool') {
+        const sw = document.createElement('button');
+        sw.className = 'switch'; sw.id = id; sw.setAttribute('role', 'switch');
+        sw.setAttribute('aria-labelledby', id + '-l');
+        sw.addEventListener('click', () => { draft[it.key] = !draft[it.key]; render(); });
+        row.appendChild(sw);
+      } else {
+        const wrap = document.createElement('div');
+        wrap.className = it.type === 'theme' ? 'themes' : 'seg';
+        wrap.setAttribute('role', 'group'); wrap.setAttribute('aria-labelledby', id + '-l');
+        it.options.forEach((opt) => {
+          const b = document.createElement('button');
+          b.id = id + '-' + opt;
+          if (it.type === 'theme') {
+            const p = PALETTES[opt];
+            b.className = 'theme-btn';
+            b.innerHTML = `<span class="swatch" style="background:rgb(${p.surface})" aria-hidden="true">` +
+              (p.accent === 'left' ? `<span class="accl" style="background:${p.good}"></span>` : '') +
+              (p.accent === 'top' ? `<span class="acct" style="background:linear-gradient(90deg,${p.good},${p.warn})"></span>` : '') +
+              `<i style="background:${p.good}"></i><i style="background:${p.heading}"></i></span>` +
+              `<span style="text-transform:capitalize">${opt}</span>`;
+          } else {
+            b.textContent = opt + (it.unit || '');
+          }
+          b.addEventListener('click', () => { draft[it.key] = opt; render(); });
+          wrap.appendChild(b);
+        });
+        row.appendChild(wrap);
+      }
+      controls.push({ it: it, row: row });
+      card.appendChild(row);
+    });
+    settingsEl.appendChild(card);
+  });
+
+  const ini = document.createElement('details');
+  ini.className = 'card ini';
+  ini.innerHTML = `<summary>config.ini<span>[overlay] keys set here</span></summary>
+    <div class="ini-body"><p>The keys this page manages in /data/fps-monitor/config.ini. Other lines and sections are left as they are.</p>
+    <pre id="ini-pre"></pre>
+    <button class="linkbtn" id="reset">Reset all to defaults</button></div>`;
+  settingsEl.appendChild(ini);
+
+  // ---------- Actions ----------
+  // Master switch: applies immediately.
+  $('t-enabled').addEventListener('click', async () => {
+    const on = !saved.enabled;
+    saved.enabled = draft.enabled = on;
+    busy = true; render();
+    try {
+      saved = await api('enabled=' + on);
+      draft.enabled = saved.enabled;
+      toast(on ? 'Overlay on' : 'Overlay off');
+    } catch (e) {
+      saved.enabled = draft.enabled = !on;
+      toast(e.message, true);
+    }
+    busy = false; render();
+  });
+
+  $('save').addEventListener('click', async () => {
+    const changed = INI_ORDER.filter((k) => draft[k] !== saved[k]);
+    if (!changed.length) return;
+    busy = true; render();
+    try {
+      saved = await api(formEncode(changed, draft));
+      draft = copy(saved);
+      toast('Saved. The overlay updates within a second.');
+    } catch (e) {
+      toast('Not saved: ' + e.message, true);
+    }
+    busy = false; render();
+  });
+  $('discard').addEventListener('click', () => { draft = copy(saved); render(); toast('Changes discarded'); });
+  $('reset').addEventListener('click', () => { draft = Object.assign(copy(DEFAULTS), { enabled: saved.enabled }); render(); });
+  $('retry').addEventListener('click', load);
+
+  let toastTimer;
+  function toast(text, long) {
+    const t = $('toast');
+    t.textContent = text; t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), long ? 5000 : 2600);
+  }
+
+  // ---------- Render ----------
+  function render() {
+    $('main').hidden = !loaded;
+    $('main').disabled = !ready || busy;
+
+    const m = $('t-enabled');
+    m.setAttribute('aria-checked', String(saved.enabled));
+    const st = $('master-state');
+    st.textContent = saved.enabled ? 'On' : 'Off';
+    st.className = 'state ' + (saved.enabled ? 'on' : 'off');
+    $('master-sub').textContent = saved.enabled
+      ? 'Showing in games. This switch applies right away.'
+      : 'Hidden in games. The monitor keeps running in the background.';
+
+    controls.forEach((c) => {
+      const it = c.it;
+      const id = 'f-' + it.key;
+      const v = draft[it.key];
+      const off = !!(it.dependsOn && !draft[it.dependsOn]);
+      c.row.classList.toggle('is-off', off);
+      if (it.type === 'bool') {
+        $(id).setAttribute('aria-checked', String(v));
+      } else {
+        it.options.forEach((o) => {
+          const b = $(id + '-' + o);
+          b.setAttribute('aria-pressed', String(o === v));
+          b.disabled = off;
+        });
+      }
+      $(id + '-dot').hidden = v === saved[it.key];
+    });
+
+    const n = INI_ORDER.filter((k) => draft[k] !== saved[k]).length;
+    const msg = $('save-msg');
+    msg.textContent = busy ? 'Saving…' : !ready ? 'Not connected'
+      : n ? `${n} unsaved change${n === 1 ? '' : 's'}` : 'All changes saved to the PS5';
+    msg.classList.toggle('dirty', ready && n > 0);
+    $('save').disabled = $('discard').disabled = !ready || busy || n === 0;
+
+    const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+    const lines = ['<span class="sec">[overlay]</span>'];
+    INI_ORDER.forEach((k) => {
+      const line = esc(k + '=' + draft[k]);
+      lines.push(draft[k] !== saved[k] ? `<span class="chg">${line}</span>` : line);
+    });
+    $('ini-pre').innerHTML = lines.join('\n');
+
+    $('cap-pos').textContent = `${draft.edge} · ${draft.align} · ${draft.margin} px`;
+    fit(); // the preview had no width while hidden; old WebKit has no ResizeObserver to notice
+    drawOverlay();
+  }
+
+  // ---------- Preview ----------
+  const fpsHist = Array.from({ length: 48 }, (_, i) => 58 + Math.sin(i / 3) * 1.5 + (i === 30 ? -14 : 0));
+  const ftHist = fpsHist.map((f) => 1000 / f);
+  const cur = { fps: 60, avg: 59.6, low: 48.2, ft: 16.7, cpu: 42, gpu: 71, mem: 9.8 };
+
+  function line(arr, lo, hi, color) {
+    const pts = arr.map((v, i) => `${(i / (arr.length - 1) * 100).toFixed(1)},${(30 - (Math.min(hi, Math.max(lo, v)) - lo) / (hi - lo) * 30).toFixed(1)}`).join(' ');
+    return `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.6" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>`;
+  }
+  function bars(arr, lo, hi, p) {
+    const bw = 100 / arr.length;
+    return arr.map((v, i) => {
+      const h = Math.max(1.5, (Math.min(hi, v) - lo) / (hi - lo) * 30);
+      const c = v > 30 ? p.bad : v > 20 ? p.warn : p.good;
+      return `<rect x="${(i * bw + bw * .15).toFixed(2)}" y="${(30 - h).toFixed(2)}" width="${(bw * .7).toFixed(2)}" height="${h.toFixed(2)}" fill="${c}"/>`;
+    }).join('');
+  }
+
+  function drawOverlay() {
+    const d = draft, p = PALETTES[d.theme] || PALETTES.classic;
+    const stage = $('stage');
+    const on = saved.enabled;
+    $('hidden-chip').hidden = on;
+    stage.style.opacity = on ? '1' : '0';
+    stage.style.setProperty('--o-surface', p.surface);
+    ['text', 'heading', 'label', 'good', 'warn', 'bad'].forEach((k) => stage.style.setProperty('--o-' + k, p[k]));
+    stage.style.fontSize = { small: '11px', medium: '13px', large: '15.5px' }[d.font_size] || '13px';
+
+    const m = d.margin / 2; // stage is 960 wide, the screen is 1920
+    const acc = p.accent ? ' acc-' + p.accent : '';
+    const alpha = (op) => `--o-alpha:${op / 100}`;
+    const vert = d.edge === 'top' ? `top:${m}px` : `bottom:${m}px`;
+    const horiz = { left: `left:${m}px`, right: `right:${m}px`, center: 'left:50%;transform:translateX(-50%)' }[d.align];
+    let html = '';
+
+    if (d.detail === 'minimal') {
+      html += `<div class="ov ov-box ov-pill${acc}" style="${vert};${horiz};${alpha(d.opacity)}"><b>${cur.fps}</b><span>FPS</span></div>`;
+    } else if (d.detail === 'compact') {
+      html += `<div class="ov ov-box ov-strip${acc}" style="${vert};${horiz};${alpha(d.opacity)}">` +
+        `<span><span class="k">FPS</span><b>${cur.fps}</b></span>` +
+        `<span><span class="k">FT</span>${cur.ft.toFixed(1)} ms</span>` +
+        (d.system ? `<span><span class="k">CPU</span>${cur.cpu}%</span><span><span class="k">GPU</span>${cur.gpu}%</span>` : '') +
+        `</div>`;
+    } else {
+      html += `<div class="ov ov-box ov-panel${acc}" style="${vert};${horiz};${alpha(d.opacity)}">` +
+        `<div class="ov-head"><span class="ov-fps">${cur.fps}</span><span class="ov-unit">FPS</span>` +
+        `<span class="ov-al"><span>AVG</span>${cur.avg.toFixed(1)}<br><span>LOW</span>${cur.low.toFixed(1)}</span></div>` +
+        `<div class="ov-row"><span>FRAME TIME</span>${cur.ft.toFixed(1)} ms</div>` +
+        `<div class="ov-row"><span>SESSION</span>00:12:48</div>` +
+        `<svg class="ov-chart" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true">` +
+          `<line x1="0" x2="100" y1="${30 - 60 / 70 * 30}" y2="${30 - 60 / 70 * 30}" stroke="rgba(238,242,245,.35)" stroke-dasharray="2 2" vector-effect="non-scaling-stroke"/>` +
+          line(fpsHist, 0, 70, p.good) + `</svg>` +
+        `<svg class="ov-chart" viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true">${line(ftHist, 0, 50, p.heading)}</svg>` +
+        `<div class="ov-stab"><i></i></div>` +
+        (d.system ? `<div class="ov-sys"><div><span>CPU</span>${cur.cpu}%</div><div><span>GPU</span>${cur.gpu}%</div><div><span>MEM</span>${cur.mem} GB</div></div>` : '') +
+        `</div>`;
+    }
+
+    if (d.fps_pill) {
+      const other = d.align === 'right' ? `left:${m}px` : `right:${m}px`;
+      html += `<div class="ov ov-box ov-pill${acc}" style="${vert};${other};${alpha(d.opacity)}"><b>${cur.fps}</b><span>FPS</span></div>`;
+    }
+    if (d.frame_graph) {
+      const gv = d.edge === 'top' ? `bottom:${m}px` : `top:${m}px`;
+      html += `<div class="ov ov-box ov-graph" style="${gv};${alpha(d.frame_graph_opacity)}">` +
+        `<svg viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true">${bars(ftHist.slice(-40), 0, 40, p)}</svg></div>`;
+    }
+    stage.innerHTML = html;
+  }
+
+  // Fit the 960x540 stage into the screen.
+  const screen = $('screen');
+  const fit = () => { $('stage').style.transform = `scale(${screen.clientWidth / 960})`; };
+  try { new ResizeObserver(fit).observe(screen); } catch (e) { window.addEventListener('resize', fit); }
+  fit();
+
+  // Gentle fake telemetry so the preview feels live.
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!reduce) {
+    let t = 0;
+    setInterval(() => {
+      t++;
+      const dip = t % 17 === 0 ? -16 : 0;
+      const f = Math.round(Math.max(30, Math.min(60, 59 + Math.random() * 1.6 + dip)));
+      fpsHist.push(f); fpsHist.shift();
+      ftHist.push(1000 / f + (dip ? 6 : Math.random() * .6)); ftHist.shift();
+      cur.fps = f; cur.ft = 1000 / f;
+      cur.avg = fpsHist.slice(-20).reduce((a, b) => a + b, 0) / 20;
+      cur.low = Math.min.apply(null, fpsHist.slice(-20));
+      cur.cpu = 40 + Math.round(Math.random() * 6);
+      cur.gpu = 68 + Math.round(Math.random() * 7);
+      drawOverlay();
+    }, 700);
+  }
+
+  $('conn-host').textContent = location.hostname || 'console';
+  load();
+})();
+</script>
+</body>
+</html>
