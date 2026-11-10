@@ -163,6 +163,82 @@ inline constexpr int kOverlayMetricMemory = 3;
 inline constexpr int kOverlayMetricIp = 4;
 inline constexpr int kOverlayMetricFan = 5;
 
+/* Independent system metrics in the standalone FPS monitor. This order is
+ * separate from overlay.order, which belongs to the legacy six-slot bar. */
+inline constexpr int kOverlaySystemMetricCount = 9;
+inline constexpr int kOverlaySystemMetricCpu = 0;
+inline constexpr int kOverlaySystemMetricGpu = 1;
+inline constexpr int kOverlaySystemMetricMemory = 2;
+inline constexpr int kOverlaySystemMetricFan = 3;
+inline constexpr int kOverlaySystemMetricIp = 4;
+inline constexpr int kOverlaySystemMetricCpuClock = 5;
+inline constexpr int kOverlaySystemMetricGpuClock = 6;
+inline constexpr int kOverlaySystemMetricSsdTemp = 7;
+inline constexpr int kOverlaySystemMetricSocPower = 8;
+inline constexpr std::array<int, kOverlaySystemMetricCount>
+    kOverlaySystemOrderDefault = {
+        kOverlaySystemMetricCpu, kOverlaySystemMetricGpu,
+        kOverlaySystemMetricMemory, kOverlaySystemMetricFan,
+        kOverlaySystemMetricIp, kOverlaySystemMetricCpuClock,
+        kOverlaySystemMetricGpuClock, kOverlaySystemMetricSsdTemp,
+        kOverlaySystemMetricSocPower};
+
+inline const char *overlay_system_metric_name(int metric) {
+  switch (metric) {
+  case kOverlaySystemMetricGpu:
+    return "gpu";
+  case kOverlaySystemMetricMemory:
+    return "memory";
+  case kOverlaySystemMetricFan:
+    return "fan";
+  case kOverlaySystemMetricIp:
+    return "ip";
+  case kOverlaySystemMetricCpuClock:
+    return "cpu_clock";
+  case kOverlaySystemMetricGpuClock:
+    return "gpu_clock";
+  case kOverlaySystemMetricSsdTemp:
+    return "ssd_temp";
+  case kOverlaySystemMetricSocPower:
+    return "soc_power";
+  case kOverlaySystemMetricCpu:
+  default:
+    return "cpu";
+  }
+}
+
+inline void overlay_normalize_system_order(
+    std::array<int, kOverlaySystemMetricCount> &order) {
+  bool seen[kOverlaySystemMetricCount] = {};
+  std::array<int, kOverlaySystemMetricCount> out{};
+  int n = 0;
+  for (int metric : order) {
+    if (metric < 0 || metric >= kOverlaySystemMetricCount || seen[metric])
+      continue;
+    seen[metric] = true;
+    out[n++] = metric;
+  }
+  for (int metric = 0; metric < kOverlaySystemMetricCount; ++metric) {
+    if (seen[metric])
+      continue;
+    out[n++] = metric;
+  }
+  order = out;
+}
+
+inline std::string overlay_system_order_name(
+    const std::array<int, kOverlaySystemMetricCount> &order) {
+  auto normalized = order;
+  overlay_normalize_system_order(normalized);
+  std::string out;
+  for (int i = 0; i < kOverlaySystemMetricCount; ++i) {
+    if (i)
+      out += ',';
+    out += overlay_system_metric_name(normalized[i]);
+  }
+  return out;
+}
+
 inline constexpr int kOverlayFontSmall = 0;
 inline constexpr int kOverlayFontMedium = 1;
 inline constexpr int kOverlayFontLarge = 2;
@@ -410,6 +486,9 @@ struct Settings {
   int overlay_font_size = kOverlayFontMedium;
   /** Display order of the six metrics; values are kOverlayMetric*. */
   std::array<int, kOverlayMetricCount> overlay_order = kOverlayOrderDefault;
+  /** Display order of the nine standalone monitor system metrics. */
+  std::array<int, kOverlaySystemMetricCount> overlay_metrics_order =
+      kOverlaySystemOrderDefault;
   /* Detail-level overlay (fps-monitor only). */
   /** kOverlayDetail*: minimal pill, compact line, panel or full panel. */
   int overlay_detail = kOverlayDetailDefault;
