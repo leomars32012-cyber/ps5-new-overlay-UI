@@ -228,6 +228,32 @@ static void check_scene(Detail d, Theme t, State st, BarEdge edge,
   const bool panel = d == Detail::Panel || d == Detail::Full;
   const float k = static_cast<float>(o.font_pt) / 18.0f;
 
+  if ((d == Detail::Minimal || d == Detail::Compact) && o.show_fps) {
+    const Text *fps = find_text(s, "id_osc_fps_v");
+    CHECK(fps && fps->align == TextAlign::Left,
+          ctx + " FPS value uses explicit centered-slot placement");
+    if (fps) {
+      const Metrics m(o.font_pt);
+      float slot_x = 0.0f;
+      float slot_w = 0.0f;
+      if (d == Detail::Minimal) {
+        const Rect *dot = find_rect(s, "id_osc_dot");
+        CHECK(dot != nullptr, ctx + " minimal FPS dot exists");
+        if (dot)
+          slot_x = dot->x + dot->w + std::round(8.0f * k);
+        slot_w = slot_w({"888"}, m.pill_pt);
+      } else {
+        slot_x = s.x + std::round(14.0f * k);
+        slot_w = slot_w({"888"}, m.strip_pt);
+      }
+      const float text_w =
+          text_advance(fps->text.c_str(), static_cast<float>(fps->pt));
+      const float expected_x = slot_x + (slot_w - text_w) * 0.5f;
+      CHECK(std::fabs(glyphs(*fps).x0 - expected_x) < 0.51f,
+            ctx + " FPS glyphs are horizontally centered in their slot");
+    }
+  }
+
   CHECK(!s.rects.empty() && !s.texts.empty(), ctx);
   CHECK(same(g_palette.text, palette(Theme::Classic).text) &&
             g_palette.surface_rgb == palette(Theme::Classic).surface_rgb,
