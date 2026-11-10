@@ -538,7 +538,7 @@ void sample_system(unsigned int idle_tid[kCpuCores], int& current_bank) {
   if (g_settings.overlay_ip) {
     char ip[ONION_NET_IP_ADDRESS_SIZE] = {};
     s.ip_valid = onion_net_get_ip_address(ip, sizeof(ip)) == ONION_NET_IP_OK;
-    s.ip_address = s.ip_valid ? ip : std::string{};
+    s.ip_address = s.ip_valid ? std::string(ip) : std::string{};
   } else {
     s.ip_valid = false;
     s.ip_address.clear();
