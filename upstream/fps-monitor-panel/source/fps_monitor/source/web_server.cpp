@@ -151,7 +151,8 @@ std::string config_json() {
        onion::overlay_detail_name(s.overlay_detail), opacity,
        onion::overlay_theme_name(s.overlay_theme), b(s.overlay_brand),
        b(s.overlay_fps_pill), b(s.overlay_system), b(s.overlay_frame_graph),
-       graph_opacity, margin});
+       graph_opacity, margin, b(s.overlay_fps), b(s.overlay_cpu),
+       b(s.overlay_gpu), b(s.overlay_ram), b(s.overlay_ip), b(s.overlay_fan)});
 }
 
 /* Whole config.ini; a missing file reads as "". */
