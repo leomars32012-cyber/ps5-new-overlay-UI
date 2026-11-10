@@ -1092,7 +1092,7 @@ inline void guide(Builder &b, const Metrics &m, const std::string &id, float x,
 inline Scene build_minimal(const Options &opt, const Readings &r,
                            const std::string &prefix = kIdPrefix) {
   if (!opt.show_fps)
-    return Scene{};
+    return finish(opt, Scene{}, 0.0f, 0.0f);
   const Metrics m(opt.font_pt);
   Scene content{};
   Builder b(m, content);
