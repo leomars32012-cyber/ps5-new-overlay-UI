@@ -267,6 +267,9 @@ void destroy_widget(const std::string &id) {
   unpin(it->second.label_handle);
   unpin(it->second.obj_handle);
   g_widgets.erase(it);
+#if defined(PS5_OVERLAY_PERF_DIAGNOSTICS)
+  onion::overlay::perf::set_widget_cache_size(g_widgets.size());
+#endif
 }
 
 void apply_rect(MonoObject *layer, const Rect &r) {
