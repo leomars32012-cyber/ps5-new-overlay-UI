@@ -651,6 +651,8 @@ struct SystemReadings {
   int vram_total_mb = 0;
   bool fan_valid = false;
   int fan_duty_pct = 0; /* 0..100% of the reported 1024-step duty */
+  bool ip_valid = false;
+  std::string ip_address;
 };
 
 /** Latest numbers; fps_valid = false shows "no game". */
@@ -707,6 +709,13 @@ struct Options {
   /** CPU / GPU / MEM row under the panel charts and after the compact
    *  strip (overlay.system). Minimal never shows it. */
   bool show_system = true;
+  /** Independent metric visibility switches; show_system remains the master. */
+  bool show_fps = true;
+  bool show_cpu = true;
+  bool show_gpu = true;
+  bool show_memory = true;
+  bool show_ip_address = false;
+  bool show_fan_duty = false;
   /** Frame-time graph box along the bottom edge (overlay.frame_graph). */
   bool frame_graph = true;
   /** The graph box's own background opacity (overlay.frame_graph_opacity). */
@@ -1082,6 +1091,8 @@ inline void guide(Builder &b, const Metrics &m, const std::string &id, float x,
 
 inline Scene build_minimal(const Options &opt, const Readings &r,
                            const std::string &prefix = kIdPrefix) {
+  if (!opt.show_fps)
+    return Scene{};
   const Metrics m(opt.font_pt);
   Scene content{};
   Builder b(m, content);
@@ -1248,102 +1259,150 @@ inline void add_frame_graph(Scene &main, const Options &opt, const Readings &r,
  * with a hairline rule. Returns the y just under the bars.
  */
 inline float system_block(Builder &b, const Metrics &m, float x0, float iw,
-                          float y, const SystemReadings &s) {
+                          float y, const SystemReadings &s,
+                          const Options &opt) {
+  const bool cpu = opt.show_cpu;
+  const bool gpu = opt.show_gpu;
+  const bool memory = opt.show_memory;
+  const bool fan = opt.show_fan_duty;
+  const bool ip = opt.show_ip_address;
+  const int primary_count = static_cast<int>(cpu) + static_cast<int>(gpu) +
+                            static_cast<int>(memory);
+  if (primary_count == 0 && !fan && !ip)
+    return y;
+
   y += m.section_gap;
   b.rect("id_osc_sys_rule", x0, y, iw, 1.0f, kHairline);
   y += 1.0f + m.section_gap;
 
-  const float cw = std::floor((iw - 2.0f * m.sys_col_gap) / 3.0f);
-  const float cx[3] = {x0, x0 + cw + m.sys_col_gap,
-                       x0 + 2.0f * (cw + m.sys_col_gap)};
-  const float cwl = x0 + iw - cx[2]; /* last column takes the remainder */
-  const float hy = y;
-  const float vy = y + m.caption_h;
-  const float by = vy + m.sys_val_h + m.sys_bar_gap;
   const float vg = std::round(5.0f * m.k);
-
-  auto heading = [&](const char *id, float x, const char *text) {
-    b.text(id, x, Builder::left_w(text, m.label_pt), hy, m.caption_h, text,
+  auto heading = [&](const char *id, float x, const char *text, float top) {
+    b.text(id, x, Builder::left_w(text, m.label_pt), top, m.caption_h, text,
            kHeading, m.label_pt, kWeightLabel, TextAlign::Left, m.label_pt);
   };
-  /* Big value at stat_pt, the small one at label_pt just after its glyphs;
-   * both sit on the stat baseline. */
   auto values = [&](const char *big_id, const char *small_id, float x,
-                    const std::string &big, Rgba big_c,
+                    float top, const std::string &big, Rgba big_c,
                     const std::string &small, Rgba small_c) {
-    b.text(big_id, x, Builder::left_w(big, m.stat_pt), vy, m.sys_val_h, big,
+    b.text(big_id, x, Builder::left_w(big, m.stat_pt), top, m.sys_val_h, big,
            big_c, m.stat_pt, kWeightValue, TextAlign::Left, m.stat_pt);
-    const float sx = x + advance(big, m.stat_pt) + vg;
-    b.text(small_id, sx, Builder::left_w(small, m.label_pt), vy, m.sys_val_h,
-           small, small_c, m.label_pt, kWeightLabel, TextAlign::Left,
-           m.stat_pt);
+    if (!small.empty()) {
+      const float sx = x + advance(big, m.stat_pt) + vg;
+      b.text(small_id, sx, Builder::left_w(small, m.label_pt), top,
+             m.sys_val_h, small, small_c, m.label_pt, kWeightLabel,
+             TextAlign::Left, m.stat_pt);
+    }
   };
 
-  /* CPU: load, temperature, one segment per core. */
-  heading("id_osc_cpu_l", cx[0], "CPU");
-  values("id_osc_cpu_v", "id_osc_cpu_t", cx[0],
-         s.cpu_valid ? fmt_pct(s.cpu_pct) : kDash,
-         s.cpu_valid && s.cpu_pct > kBarWarnPct ? kWarn : kText,
-         s.cpu_temp_valid ? fmt_temp(s.cpu_temp) : kDash,
-         s.cpu_temp_valid ? temp_color(s.cpu_temp, kCpuTempScale) : kLabel);
-  b.rect("id_osc_cpu_track", cx[0], by, cw, m.sys_bar_h, kTrack);
-  if (s.cpu_valid) {
-    const int n = static_cast<int>(sizeof(s.cpu_core) / sizeof(s.cpu_core[0]));
-    const float pitch = (cw + m.sys_seg_gap) / static_cast<float>(n);
-    for (int i = 0; i < n; ++i) {
-      const float sx0 = cx[0] + std::round(i * pitch);
-      const float sx1 = cx[0] + std::round((i + 1) * pitch) - m.sys_seg_gap;
-      const float sw = std::max(1.0f, sx1 - sx0);
-      const float load = std::clamp(s.cpu_core[i], 0.0f, 100.0f);
-      const float fw = load > 0.0f ? std::max(1.0f, std::round(sw * load / 100.0f))
-                                   : 0.0f;
-      /* Builder drops a zero-width rect, so an idle core leaves its slot
-       * showing the track. */
-      b.rect("id_osc_cpu_seg" + std::to_string(i), sx0, by, fw, m.sys_bar_h,
-             load > kBarWarnPct ? kWarn : kFill);
+  /* The original CPU / GPU / MEMORY columns keep their relative order and
+   * expand to fill the row when one or more are hidden. */
+  if (primary_count > 0) {
+    const float gap = primary_count > 1 ? m.sys_col_gap : 0.0f;
+    const float cw = std::floor((iw - gap * (primary_count - 1)) /
+                                static_cast<float>(primary_count));
+    float x = x0;
+    const float hy = y, vy = y + m.caption_h;
+    const float by = vy + m.sys_val_h + m.sys_bar_gap;
+    auto next_column = [&]() {
+      const float here = x;
+      x += cw + gap;
+      return here;
+    };
+
+    if (cpu) {
+      const float cx = next_column();
+      heading("id_osc_cpu_l", cx, "CPU", hy);
+      values("id_osc_cpu_v", "id_osc_cpu_t", cx, vy,
+             s.cpu_valid ? fmt_pct(s.cpu_pct) : kDash,
+             s.cpu_valid && s.cpu_pct > kBarWarnPct ? kWarn : kText,
+             s.cpu_temp_valid ? fmt_temp(s.cpu_temp) : kDash,
+             s.cpu_temp_valid ? temp_color(s.cpu_temp, kCpuTempScale) : kLabel);
+      b.rect("id_osc_cpu_track", cx, by, cw, m.sys_bar_h, kTrack);
+      if (s.cpu_valid) {
+        const int n = static_cast<int>(sizeof(s.cpu_core) / sizeof(s.cpu_core[0]));
+        const float pitch = (cw + m.sys_seg_gap) / static_cast<float>(n);
+        for (int i = 0; i < n; ++i) {
+          const float sx0 = cx + std::round(i * pitch);
+          const float sx1 = cx + std::round((i + 1) * pitch) - m.sys_seg_gap;
+          const float sw = std::max(1.0f, sx1 - sx0);
+          const float load = std::clamp(s.cpu_core[i], 0.0f, 100.0f);
+          const float fw = load > 0.0f ? std::max(1.0f, std::round(sw * load / 100.0f)) : 0.0f;
+          b.rect("id_osc_cpu_seg" + std::to_string(i), sx0, by, fw, m.sys_bar_h,
+                 load > kBarWarnPct ? kWarn : kFill);
+        }
+      }
     }
+
+    if (gpu) {
+      const float gx = next_column();
+      heading("id_osc_gpu_l", gx, "GPU", hy);
+      const std::string gpu_detail = s.power_valid ? fmt_watts(s.gpu_power_w) : kDash;
+      values("id_osc_gpu_v", "id_osc_gpu_t", gx, vy,
+             s.soc_temp_valid ? fmt_temp(s.soc_temp) : kDash,
+             s.soc_temp_valid ? temp_color(s.soc_temp, kGpuTempScale) : kText,
+             gpu_detail, kLabel);
+      b.rect("id_osc_gpu_track", gx, by, cw, m.sys_bar_h, kTrack);
+      if (s.power_valid)
+        b.rect("id_osc_gpu_fill", gx, by,
+               std::round(cw * std::clamp(s.gpu_power_w / kGpuPowerScaleW, 0.0f, 1.0f)),
+               m.sys_bar_h, kFill);
+    }
+
+    if (memory) {
+      const float mx = next_column();
+      heading("id_osc_mem_l", mx, "MEMORY", hy);
+      const float mem_pct = s.ram_valid
+          ? 100.0f * static_cast<float>(s.ram_used_mb) / static_cast<float>(s.ram_total_mb)
+          : 0.0f;
+      const std::string mem_detail =
+          s.vram_valid ? "V " + fmt_gb(s.vram_used_mb) + "GB" : "GB";
+      values("id_osc_mem_v", "id_osc_mem_u", mx, vy,
+             s.ram_valid ? fmt_gb(s.ram_used_mb) : kDash,
+             s.ram_valid && mem_pct > kBarWarnPct ? kWarn : kText,
+             mem_detail, kLabel);
+      const float mw = x0 + iw - mx;
+      b.rect("id_osc_mem_track", mx, by, mw, m.sys_bar_h, kTrack);
+      if (s.ram_valid)
+        b.rect("id_osc_mem_fill", mx, by,
+               std::round(mw * std::clamp(mem_pct, 0.0f, 100.0f) / 100.0f),
+               m.sys_bar_h, mem_pct > kBarWarnPct ? kWarn : kFill);
+    }
+    y = by + m.sys_bar_h;
   }
 
-  /* GPU: SoC temperature and core power; fan duty is a separate reading. */
-  heading("id_osc_gpu_l", cx[1], "GPU");
-  std::string gpu_detail = s.power_valid ? fmt_watts(s.gpu_power_w) : kDash;
-  if (s.fan_valid) {
-    if (s.power_valid)
-      gpu_detail += " ";
-    gpu_detail += "F";
-    gpu_detail += std::to_string(s.fan_duty_pct);
-    gpu_detail += "%";
+  /* Fan and IP have their own secondary row: fan is never appended to the
+   * GPU value, so it remains legible and independently controlled. */
+  const int secondary_count = static_cast<int>(fan) + static_cast<int>(ip);
+  if (secondary_count > 0) {
+    if (primary_count > 0)
+      y += m.section_gap;
+    const float gap = secondary_count > 1 ? m.sys_col_gap : 0.0f;
+    const float cw = std::floor((iw - gap * (secondary_count - 1)) /
+                                static_cast<float>(secondary_count));
+    const float hy = y, vy = y + m.caption_h;
+    const float by = vy + m.sys_val_h + m.sys_bar_gap;
+    float x = x0;
+    if (fan) {
+      heading("id_osc_fan_l", x, "FAN", hy);
+      const std::string value = s.fan_valid ? fmt_pct(static_cast<float>(s.fan_duty_pct)) : kDash;
+      b.text("id_osc_fan_v", x, Builder::left_w(value, m.stat_pt), vy,
+             m.sys_val_h, value, kText, m.stat_pt, kWeightValue,
+             TextAlign::Left, m.stat_pt);
+      b.rect("id_osc_fan_track", x, by, cw, m.sys_bar_h, kTrack);
+      if (s.fan_valid)
+        b.rect("id_osc_fan_fill", x, by,
+               std::round(cw * std::clamp(static_cast<float>(s.fan_duty_pct) / 100.0f, 0.0f, 1.0f)),
+               m.sys_bar_h, kFill);
+      x += cw + gap;
+    }
+    if (ip) {
+      heading("id_osc_ip_l", x, "IP ADDRESS", hy);
+      const std::string value = s.ip_valid ? s.ip_address : kDash;
+      b.text("id_osc_ip_v", x, cw, vy, m.sys_val_h, value, kText,
+             m.label_pt, kWeightValue, TextAlign::Left, m.label_pt);
+    }
+    y = by + m.sys_bar_h;
   }
-  values("id_osc_gpu_v", "id_osc_gpu_t", cx[1],
-         s.soc_temp_valid ? fmt_temp(s.soc_temp) : kDash,
-         s.soc_temp_valid ? temp_color(s.soc_temp, kGpuTempScale) : kText,
-         gpu_detail, kLabel);
-  b.rect("id_osc_gpu_track", cx[1], by, cw, m.sys_bar_h, kTrack);
-  if (s.power_valid)
-    b.rect("id_osc_gpu_fill", cx[1], by,
-           std::round(cw * std::clamp(s.gpu_power_w / kGpuPowerScaleW, 0.0f,
-                                      1.0f)),
-           m.sys_bar_h, kFill);
-
-  /* MEM: used GB; the bar shows it against the total. */
-  heading("id_osc_mem_l", cx[2], "MEMORY");
-  const float mem_pct =
-      s.ram_valid ? 100.0f * static_cast<float>(s.ram_used_mb) /
-                        static_cast<float>(s.ram_total_mb)
-                  : 0.0f;
-  const std::string mem_detail =
-      s.vram_valid ? "V " + fmt_gb(s.vram_used_mb) + "GB" : "GB";
-  values("id_osc_mem_v", "id_osc_mem_u", cx[2],
-         s.ram_valid ? fmt_gb(s.ram_used_mb) : kDash,
-         s.ram_valid && mem_pct > kBarWarnPct ? kWarn : kText, mem_detail,
-         kLabel);
-  b.rect("id_osc_mem_track", cx[2], by, cwl, m.sys_bar_h, kTrack);
-  if (s.ram_valid)
-    b.rect("id_osc_mem_fill", cx[2], by,
-           std::round(cwl * std::clamp(mem_pct, 0.0f, 100.0f) / 100.0f),
-           m.sys_bar_h, mem_pct > kBarWarnPct ? kWarn : kFill);
-
-  return by + m.sys_bar_h;
+  return y;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1397,19 +1456,21 @@ inline Scene build_compact(const Options &opt, const Readings &r,
     x += std::max(w, std::ceil(advance(label, m.head_pt)));
   };
 
-  /* Hero, with FPS stacked over its window on the value baseline. */
-  const float fw = slot_w({"888"}, m.strip_pt);
-  b.text("id_osc_fps_v", x, fw, vy, vr, ok ? fmt_fps(r.fps) : kDash,
-         ok ? fps_value_color(fps_state(r.fps, target)) : kText, m.strip_pt,
-         kWeightHero, TextAlign::Right, m.value_pt);
-  x += fw + px(6.0f);
-  b.text("id_osc_fps_l", x, Builder::left_w("FPS", m.head_pt), ly, lr, "FPS",
-         kHeading, m.head_pt, kWeightLabel, TextAlign::Left, m.head_pt);
-  b.text("id_osc_fps_w", x, Builder::left_w("0.5 S", m.head_pt), vy, vr,
-         "0.5 S", kLabel, m.head_pt, kWeightLabel, TextAlign::Left,
-         m.value_pt);
-  x += std::ceil(advance("0.5 S", m.head_pt));
-  sep("id_osc_sep0");
+  /* Current FPS can be hidden without suppressing frame-time / history data. */
+  if (opt.show_fps) {
+    const float fw = slot_w({"888"}, m.strip_pt);
+    b.text("id_osc_fps_v", x, fw, vy, vr, ok ? fmt_fps(r.fps) : kDash,
+           ok ? fps_value_color(fps_state(r.fps, target)) : kText, m.strip_pt,
+           kWeightHero, TextAlign::Right, m.value_pt);
+    x += fw + px(6.0f);
+    b.text("id_osc_fps_l", x, Builder::left_w("FPS", m.head_pt), ly, lr, "FPS",
+           kHeading, m.head_pt, kWeightLabel, TextAlign::Left, m.head_pt);
+    b.text("id_osc_fps_w", x, Builder::left_w("0.5 S", m.head_pt), vy, vr,
+           "0.5 S", kLabel, m.head_pt, kWeightLabel, TextAlign::Left,
+           m.value_pt);
+    x += std::ceil(advance("0.5 S", m.head_pt));
+    sep("id_osc_sep0");
+  }
 
   cell("ft", "FRAME", ok ? fmt_ms(r.frame_ms) : kDash,
        ok ? fps_value_color(fps_state(r.fps, target)) : kText, {"888.8"}, "ms",
@@ -1442,17 +1503,45 @@ inline Scene build_compact(const Options &opt, const Readings &r,
 
   if (opt.show_system) {
     const SystemReadings &s = r.sys;
-    sep("id_osc_sep2");
-    cell("scpu", "CPU", s.cpu_valid ? fmt_pct(s.cpu_pct) : kDash,
-         s.cpu_valid && s.cpu_pct > kBarWarnPct ? kWarn : kText, {"100%"},
-         s.cpu_temp_valid ? fmt_temp(s.cpu_temp) : kDash,
-         s.cpu_temp_valid ? temp_color(s.cpu_temp, kCpuTempScale) : kLabel,
-         {"100\xC2\xB0"});
-    x += vg;
-    cell("sgpu", "GPU", s.soc_temp_valid ? fmt_temp(s.soc_temp) : kDash,
-         s.soc_temp_valid ? temp_color(s.soc_temp, kGpuTempScale) : kText,
-         {"100\xC2\xB0"}, s.power_valid ? fmt_watts(s.gpu_power_w) : kDash,
-         kLabel, {"128 W"});
+    bool first = true;
+    auto next_metric = [&]() {
+      if (first) {
+        sep("id_osc_sep2");
+        first = false;
+      } else {
+        x += vg;
+      }
+    };
+    if (opt.show_cpu) {
+      next_metric();
+      cell("scpu", "CPU", s.cpu_valid ? fmt_pct(s.cpu_pct) : kDash,
+           s.cpu_valid && s.cpu_pct > kBarWarnPct ? kWarn : kText, {"100%"},
+           s.cpu_temp_valid ? fmt_temp(s.cpu_temp) : kDash,
+           s.cpu_temp_valid ? temp_color(s.cpu_temp, kCpuTempScale) : kLabel,
+           {"100\xC2\xB0"});
+    }
+    if (opt.show_gpu) {
+      next_metric();
+      cell("sgpu", "GPU", s.soc_temp_valid ? fmt_temp(s.soc_temp) : kDash,
+           s.soc_temp_valid ? temp_color(s.soc_temp, kGpuTempScale) : kText,
+           {"100\xC2\xB0"}, s.power_valid ? fmt_watts(s.gpu_power_w) : kDash,
+           kLabel, {"128 W"});
+    }
+    if (opt.show_memory) {
+      next_metric();
+      cell("smem", "MEM", s.ram_valid ? fmt_gb(s.ram_used_mb) : kDash,
+           s.ram_valid ? kText : kText, {"999.9"}, "GB", kLabel, {"GB"});
+    }
+    if (opt.show_fan_duty) {
+      next_metric();
+      cell("sfan", "FAN", s.fan_valid ? fmt_pct(static_cast<float>(s.fan_duty_pct)) : kDash,
+           kText, {"100%"}, "", kLabel, {});
+    }
+    if (opt.show_ip_address) {
+      next_metric();
+      cell("sip", "IP", s.ip_valid ? s.ip_address : kDash,
+           kText, {"255.255.255.255"}, "", kLabel, {});
+    }
   }
   x += px(14.0f);
   return finish(opt, std::move(content), x, lh);
@@ -1506,8 +1595,9 @@ inline Scene build_panel(const Options &opt, const Readings &r,
                kLabel, m.head_pt, kWeightLabel, TextAlign::Right, m.head_pt);
         rx -= pw + std::round(5.0f * m.k);
       };
-      pill("id_osc_head_pill", "id_osc_head_r",
-           "TARGET " + std::to_string(target));
+      if (opt.show_fps)
+        pill("id_osc_head_pill", "id_osc_head_r",
+             "TARGET " + std::to_string(target));
       const std::string plat = platform_label(r.title_id);
       if (!plat.empty())
         pill("id_osc_head_plat", "id_osc_head_plat_t", plat);
@@ -1516,19 +1606,21 @@ inline Scene build_panel(const Options &opt, const Readings &r,
   }
 
   if (!r.fps_valid) {
-    const float lh = m.caption_h + std::round(6.0f * m.k);
-    b.text("id_osc_fps_v", x0, iw, y, lh, "NO GAME DETECTED", kLabel,
-           m.label_pt, kWeightLabel, TextAlign::Left, m.label_pt);
-    y += lh;
+    if (opt.show_fps) {
+      const float lh = m.caption_h + std::round(6.0f * m.k);
+      b.text("id_osc_fps_v", x0, iw, y, lh, "NO GAME DETECTED", kLabel,
+             m.label_pt, kWeightLabel, TextAlign::Left, m.label_pt);
+      y += lh;
+    }
     /* The system row does not need a game. */
     if (opt.show_system)
-      y = system_block(b, m, x0, iw, y, r.sys);
+      y = system_block(b, m, x0, iw, y, r.sys, opt);
     y = watermark(b, m, x0, iw, y);
     return finish(opt, std::move(content), m.panel_w, y + m.pad_y);
   }
 
-  /* Hero: 60 FPS ............ AVG  LOW / 59.8  52.3 */
-  {
+  /* Current FPS and its companion AVG/LOW block. */
+  if (opt.show_fps) {
     const float hh = m.hero_h;
     const float cw =
         std::max(slot_w({"888.8"}, m.stat_pt), slot_w({"1% LOW"}, m.label_pt));
@@ -1779,7 +1871,7 @@ inline Scene build_panel(const Options &opt, const Readings &r,
   }
 
   if (opt.show_system)
-    y = system_block(b, m, x0, iw, y, r.sys);
+    y = system_block(b, m, x0, iw, y, r.sys, opt);
   y = watermark(b, m, x0, iw, y);
 
   return finish(opt, std::move(content), m.panel_w, y + m.pad_y);
@@ -1811,7 +1903,7 @@ inline Scene build_scene(const Options &opt, const Readings &readings,
     break;
   }
   /* The minimal level already is the pill: no second copy. */
-  if (opt.fps_pill && opt.detail != Detail::Minimal)
+  if (opt.show_fps && opt.fps_pill && opt.detail != Detail::Minimal)
     detail::add_fps_pill(s, opt, r);
   if (opt.frame_graph)
     detail::add_frame_graph(s, opt, r, hist);
