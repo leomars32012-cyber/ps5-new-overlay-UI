@@ -1304,12 +1304,20 @@ inline float system_block(Builder &b, const Metrics &m, float x0, float iw,
     }
   }
 
-  /* GPU: SoC temperature, core power; the bar is power on a fixed scale. */
+  /* GPU: SoC temperature and core power; fan duty is a separate reading. */
   heading("id_osc_gpu_l", cx[1], "GPU");
+  std::string gpu_detail = s.power_valid ? fmt_watts(s.gpu_power_w) : kDash;
+  if (s.fan_valid) {
+    if (s.power_valid)
+      gpu_detail += " ";
+    gpu_detail += "F";
+    gpu_detail += std::to_string(s.fan_duty_pct);
+    gpu_detail += "%";
+  }
   values("id_osc_gpu_v", "id_osc_gpu_t", cx[1],
          s.soc_temp_valid ? fmt_temp(s.soc_temp) : kDash,
          s.soc_temp_valid ? temp_color(s.soc_temp, kGpuTempScale) : kText,
-         s.power_valid ? fmt_watts(s.gpu_power_w) : kDash, kLabel);
+         gpu_detail, kLabel);
   b.rect("id_osc_gpu_track", cx[1], by, cw, m.sys_bar_h, kTrack);
   if (s.power_valid)
     b.rect("id_osc_gpu_fill", cx[1], by,
@@ -1323,9 +1331,12 @@ inline float system_block(Builder &b, const Metrics &m, float x0, float iw,
       s.ram_valid ? 100.0f * static_cast<float>(s.ram_used_mb) /
                         static_cast<float>(s.ram_total_mb)
                   : 0.0f;
+  const std::string mem_detail =
+      s.vram_valid ? "V " + fmt_gb(s.vram_used_mb) + "GB" : "GB";
   values("id_osc_mem_v", "id_osc_mem_u", cx[2],
          s.ram_valid ? fmt_gb(s.ram_used_mb) : kDash,
-         s.ram_valid && mem_pct > kBarWarnPct ? kWarn : kText, "GB", kLabel);
+         s.ram_valid && mem_pct > kBarWarnPct ? kWarn : kText, mem_detail,
+         kLabel);
   b.rect("id_osc_mem_track", cx[2], by, cwl, m.sys_bar_h, kTrack);
   if (s.ram_valid)
     b.rect("id_osc_mem_fill", cx[2], by,
