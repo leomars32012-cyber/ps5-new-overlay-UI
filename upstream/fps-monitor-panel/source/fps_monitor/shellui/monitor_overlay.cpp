@@ -11,6 +11,7 @@
 #include "overlay_scene.hpp"
 #include "overlay_scene_renderer.hpp"
 #include <onion/fps_sample.h>
+#include <onion/net.h>
 #include <onion/settings.hpp>
 #include <cerrno>
 #include <cmath>
@@ -214,10 +215,14 @@ bool detail_is(int detail) { return g_settings.overlay_detail == detail; }
 
 /* The overlay is performance-only: FPS whenever it is on. */
 bool wants_fps() { return g_settings.overlay_enabled; }
-/* The scene overlay's CPU / GPU / MEM row (compact, panel, full). */
+/* The system row is a master switch; each metric below is independently
+ * selectable. Keep the sampler asleep when every system metric is hidden. */
 bool wants_system() {
   return g_settings.overlay_enabled && g_settings.overlay_system &&
-         !detail_is(onion::kOverlayDetailMinimal);
+         !detail_is(onion::kOverlayDetailMinimal) &&
+         (g_settings.overlay_cpu || g_settings.overlay_gpu ||
+          g_settings.overlay_ram || g_settings.overlay_ip ||
+          g_settings.overlay_fan);
 }
 
 scene::Detail scene_detail() {
@@ -529,6 +534,16 @@ void sample_system(unsigned int idle_tid[kCpuCores], int& current_bank) {
     s.vram_total_mb = total;
   }
 
+  /* Console IPv4 is sampled independently from hardware telemetry. */
+  if (g_settings.overlay_ip) {
+    char ip[ONION_NET_IP_ADDRESS_SIZE] = {};
+    s.ip_valid = onion_net_get_ip_address(ip, sizeof(ip)) == ONION_NET_IP_OK;
+    s.ip_address = s.ip_valid ? ip : std::string{};
+  } else {
+    s.ip_valid = false;
+    s.ip_address.clear();
+  }
+
   /* Fan duty is an independent optional libkernel_sys symbol. */
   static int fan_failing = 0;
   uint16_t fan_duty = 0;
@@ -590,6 +605,12 @@ void scene_render() {
   o.brand = g_settings.overlay_brand;
   o.fps_pill = g_settings.overlay_fps_pill;
   o.show_system = g_settings.overlay_system;
+  o.show_fps = g_settings.overlay_fps;
+  o.show_cpu = g_settings.overlay_cpu;
+  o.show_gpu = g_settings.overlay_gpu;
+  o.show_memory = g_settings.overlay_ram;
+  o.show_ip_address = g_settings.overlay_ip;
+  o.show_fan_duty = g_settings.overlay_fan;
   o.frame_graph = g_settings.overlay_frame_graph;
   o.graph_opacity = g_settings.overlay_frame_graph_opacity;
   /* kOverlayTheme* values follow the scene::Theme order. */
