@@ -574,7 +574,7 @@ int parse_overlay_detail(const char *s, int def) {
 }
 
 int parse_overlay_theme(const char *s, int def) {
-  for (int theme = kOverlayThemeClassic; theme <= kOverlayThemeVice; ++theme) {
+  for (int theme = kOverlayThemeClassic; theme <= kOverlayThemeGold; ++theme) {
     if (streq_ci(s, overlay_theme_name(theme)))
       return theme;
   }
@@ -1138,7 +1138,7 @@ std::string settings_serialize(const Settings &in) {
   b += "# Available values: 0, 5, 10, 20\n";
   b += "margin=" + std::to_string(in.overlay_margin) + "\n";
   b += "# theme picks the colours.\n";
-  b += "# Available values: classic, mono, aurora, vice\n";
+  b += "# Available values: classic, mono, aurora, vice, emerald, sunset, arctic, crimson, gold\n";
   b += "theme=" + std::string(overlay_theme_name(in.overlay_theme)) + "\n";
   b += "\n";
   b += "[shortcuts]\n";
