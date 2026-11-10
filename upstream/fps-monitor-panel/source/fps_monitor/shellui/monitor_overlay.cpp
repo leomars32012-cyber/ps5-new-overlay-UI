@@ -213,7 +213,8 @@ constexpr int64_t kFpsSessionEndSeconds = 10;
 
 bool detail_is(int detail) { return g_settings.overlay_detail == detail; }
 
-/* The overlay is performance-only: FPS whenever it is on. */
+/* FPS samples also feed frame-time and history charts, even when the
+ * current-FPS number itself is hidden. */
 bool wants_fps() { return g_settings.overlay_enabled; }
 /* The system row is a master switch; each metric below is independently
  * selectable. Keep the sampler asleep when every system metric is hidden. */
