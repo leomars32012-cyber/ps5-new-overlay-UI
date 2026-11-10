@@ -220,7 +220,7 @@ fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
 .seg button[aria-pressed="true"] { background: var(--surface); color: var(--fg); box-shadow: 0 1px 3px rgba(0, 0, 0, .12), inset 0 0 0 1px var(--line); }
 .seg button:disabled { cursor: not-allowed; }
 
-.themes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-gap: 8px; gap: 8px; }
+.themes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-gap: 8px; gap: 8px; }
 .theme-btn {
   border: 1px solid var(--line); background: var(--surface); border-radius: 11px; padding: 6px 6px 8px; cursor: pointer;
   display: grid; grid-gap: 6px; gap: 6px; font-size: 13px; font-weight: 500; color: var(--muted);
@@ -359,7 +359,12 @@ fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
     classic: { surface: '11,14,19', text: '#EEF2F5', heading: '#C9D0D6', label: '#A7B0B8', good: '#5AA9E6', warn: '#F5B13D', bad: '#FF7A59', accent: null },
     mono:    { surface: '10,12,15', text: '#EEF2F5', heading: '#C9D0D6', label: '#A7B0B8', good: 'rgba(238,242,245,.55)', warn: '#F5B13D', bad: '#F2545B', accent: null },
     aurora:  { surface: '8,12,22',  text: '#E6FBFF', heading: '#A5F3FC', label: '#CBD5E1', good: '#22D3EE', warn: '#FBBF24', bad: '#FB7185', accent: 'left' },
-    vice:    { surface: '21,10,36', text: '#FDF2F8', heading: '#E9D5FF', label: '#C4B5FD', good: '#FF4FA3', warn: '#FF8A3D', bad: '#FF3344', accent: 'top' }
+    vice:    { surface: '21,10,36', text: '#FDF2F8', heading: '#E9D5FF', label: '#C4B5FD', good: '#FF4FA3', warn: '#FF8A3D', bad: '#FF3344', accent: 'top' },
+    emerald: { surface: '7,26,22', text: '#E6FFF5', heading: '#A7F3D0', label: '#86B8A5', good: '#34D399', warn: '#FBBF24', bad: '#FB7185', accent: 'left' },
+    sunset:  { surface: '29,17,16', text: '#FFF1E8', heading: '#FBC4A4', label: '#D6A58F', good: '#FB923C', warn: '#FACC15', bad: '#EF4444', accent: 'top' },
+    arctic:  { surface: '11,23,36', text: '#EAF6FF', heading: '#B9E5FF', label: '#9BB8CC', good: '#38BDF8', warn: '#FBBF24', bad: '#FB7185', accent: 'left' },
+    crimson: { surface: '26,11,16', text: '#FFF1F2', heading: '#FDA4AF', label: '#DDA4AC', good: '#FB7185', warn: '#FBBF24', bad: '#EF4444', accent: 'top' },
+    gold:    { surface: '23,20,11', text: '#FFF9E6', heading: '#FDE68A', label: '#CDBE91', good: '#EAB308', warn: '#FB923C', bad: '#EF4444', accent: 'left' }
   };
 
   const SCHEMA = [
@@ -370,7 +375,7 @@ fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
     ]},
     { title: 'Look', items: [
       { key: 'detail', label: 'Detail', hint: 'An FPS pill, one strip, or the corner panel. Full is the same as panel for now.', type: 'seg', options: ['minimal', 'compact', 'panel', 'full'] },
-      { key: 'theme', label: 'Theme', type: 'theme', options: ['classic', 'mono', 'aurora', 'vice'] },
+      { key: 'theme', label: 'Theme', type: 'theme', options: ['classic', 'mono', 'aurora', 'vice', 'emerald', 'sunset', 'arctic', 'crimson', 'gold'] },
       { key: 'font_size', label: 'Text size', type: 'seg', options: ['small', 'medium', 'large'] },
       { key: 'opacity', label: 'Background opacity', hint: '0 hides the background', type: 'seg', options: [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100], unit: '%' }
     ]},
