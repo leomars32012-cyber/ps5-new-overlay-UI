@@ -598,7 +598,27 @@ static void check_metric_visibility() {
   CHECK(gpu && gpu->text == "74 W", "GPU detail contains power only");
   const Text *fan = find_text(s, "id_osc_fan_v");
   CHECK(fan && fan->text == "35%", "fan value is independently readable");
+  const Text *ip = find_text(s, "id_osc_ip_v");
+  CHECK(ip && ip->text == "192.168.2.210", "IP address is rendered");
 
+  o.detail = Detail::Minimal;
+  o.frame_graph = false;
+  const Scene minimal_hidden = build_scene(o, f.r, f.h);
+  CHECK(minimal_hidden.screen_w == 1920.0f &&
+            minimal_hidden.texts.empty() && minimal_hidden.rects.empty(),
+        "minimal mode produces a valid empty scene when FPS is hidden");
+
+  o.detail = Detail::Compact;
+  o.show_fps = false;
+  const Scene compact = build_scene(o, f.r, f.h);
+  CHECK(find_text(compact, "id_osc_fps_v") == nullptr,
+        "compact FPS hidden");
+  CHECK(find_text(compact, "id_osc_sfan_v") != nullptr,
+        "compact fan has a dedicated cell");
+  CHECK(find_text(compact, "id_osc_sip_v") != nullptr,
+        "compact IP has a dedicated cell");
+
+  o.detail = Detail::Panel;
   o.show_system = false;
   const Scene master_off = build_scene(o, f.r, f.h);
   CHECK(find_text(master_off, "id_osc_fan_l") == nullptr,
