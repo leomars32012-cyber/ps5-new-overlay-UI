@@ -293,8 +293,8 @@ inline std::string apply_updates(std::string_view ini, const Updates &updates) {
   return out;
 }
 
-/* {"enabled":true,...} from the 19 values in kKeys order. */
-inline std::string config_json(const std::array<std::string_view, 19> &values) {
+/* {"enabled":true,...} from the 23 values in kKeys order. */
+inline std::string config_json(const std::array<std::string_view, 23> &values) {
   std::string out = "{";
   for (std::size_t i = 0; i < kKeys.size(); ++i) {
     out += (i ? ",\"" : "\"") + std::string(kKeys[i].name) + "\":";
