@@ -154,7 +154,8 @@ std::string config_json() {
        graph_opacity, margin, b(s.overlay_fps), b(s.overlay_cpu),
        b(s.overlay_gpu), b(s.overlay_ram), b(s.overlay_ip), b(s.overlay_fan),
        b(s.overlay_cpu_clock), b(s.overlay_gpu_clock), b(s.overlay_ssd_temp),
-       b(s.overlay_soc_power)});
+       b(s.overlay_soc_power),
+       onion::overlay_system_order_name(s.overlay_metrics_order)});
 }
 
 /* Whole config.ini; a missing file reads as "". */
