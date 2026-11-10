@@ -52,6 +52,10 @@ int main() {
   assert(u.size() == 2 && u[0].first == "show_cpu" &&
          u[1].first == "show_fan_duty");
   assert(parse_updates("enabled=false&theme=vice", u).empty());
+  assert(parse_updates("metrics_order=soc_power%2Cssd_temp%2Cgpu_clock%2Ccpu_clock%2Cip%2Cfan%2Cmemory%2Cgpu%2Ccpu", u).empty());
+  assert(u.size() == 1 && u[0].first == "metrics_order");
+  assert(parse_updates("metrics_order=cpu%2Cgpu", u) ==
+         "invalid value for metrics_order");
   assert(u.size() == 2 && u[0].first == "enabled" && u[1].second == "vice");
   assert(parse_updates("th%65me=mono", u).empty() && u[0].first == "theme");
   assert(parse_updates("", u) == "empty body");
