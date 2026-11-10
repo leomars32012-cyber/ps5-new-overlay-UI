@@ -73,6 +73,18 @@ jobs:
             -DPS5_PAYLOAD_SDK="${PS5_PAYLOAD_SDK}"
           cmake --build build --target fps_monitor --verbose -j"$(nproc)"
 
+      - name: Compile optional HUD diagnostics variant
+        env:
+          PS5_PAYLOAD_SDK: /opt/ps5-payload-sdk
+          LLVM_CONFIG: /usr/bin/llvm-config-18
+        run: |
+          export PATH="/opt/ps5-payload-sdk/bin:/usr/lib/llvm-18/bin:${PATH}"
+          prospero-cmake -S . -B build-perf -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DPS5_PAYLOAD_SDK="${PS5_PAYLOAD_SDK}" \
+            -DPS5_OVERLAY_PERF_DIAGNOSTICS=ON
+          cmake --build build-perf --target fps_monitor_shellui --verbose -j"$(nproc)"
+
       - name: Prepare build artifacts
         run: |
           mkdir -p dist
