@@ -330,7 +330,9 @@ fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
   const DEFAULTS = {
     enabled: true, edge: 'top', align: 'left', font_size: 'medium', detail: 'panel',
     opacity: 85, theme: 'classic', fps_pill: false, system: true,
-    frame_graph: true, frame_graph_opacity: 85, margin: 20
+    frame_graph: true, frame_graph_opacity: 85, margin: 20,
+    show_fps: true, show_cpu: true, show_gpu: true, show_memory: true,
+    show_ip_address: false, show_fan_duty: false
   };
   const INI_ORDER = Object.keys(DEFAULTS);
 
@@ -353,6 +355,14 @@ fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
       { key: 'theme', label: 'Theme', type: 'theme', options: ['classic', 'mono', 'aurora', 'vice'] },
       { key: 'font_size', label: 'Text size', type: 'seg', options: ['small', 'medium', 'large'] },
       { key: 'opacity', label: 'Background opacity', hint: '0 hides the background', type: 'seg', options: [0, 40, 65, 85], unit: '%' }
+    ]},
+    { title: 'Metric visibility', items: [
+      { key: 'show_fps', label: 'FPS', hint: 'Show the in-game frame-rate metric', type: 'bool' },
+      { key: 'show_cpu', label: 'CPU', hint: 'Show CPU temperature and usage', type: 'bool' },
+      { key: 'show_gpu', label: 'GPU', hint: 'Show GPU temperature and usage', type: 'bool' },
+      { key: 'show_memory', label: 'Memory', hint: 'Show system memory usage', type: 'bool' },
+      { key: 'show_ip_address', label: 'IP address', hint: 'Show the console LAN address', type: 'bool' },
+      { key: 'show_fan_duty', label: 'Fan speed', hint: 'Show current fan duty percentage when available', type: 'bool' }
     ]},
     { title: 'Panel contents', items: [
       { key: 'system', label: 'System row', hint: 'CPU, GPU and memory under the charts', type: 'bool' },
