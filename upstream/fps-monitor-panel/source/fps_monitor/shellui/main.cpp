@@ -127,10 +127,25 @@ void load_settings() {
   const time_t mtime = onion::settings_config_newest_mtime();
   onion::Settings s{};
   /* false = defaults kept; a rejected file is warned about in settings.cpp. */
-  (void)onion::settings_load(&s);
+  const bool loaded = onion::settings_load(&s);
+  const char *loaded_path = onion::settings_last_loaded_path();
   onion::apply_log_settings(s);
   g_settings = s;
   apply_overlay_layout();
+  LOG_INFO(
+      "fps-monitor: config applied loaded=%s path=%s enabled=%d detail=%d "
+      "edge=%d align=%d font=%d theme=%d opacity=%d margin=%d system=%d "
+      "fps=%d cpu=%d gpu=%d ram=%d ip=%d fan=%d cpu_clock=%d gpu_clock=%d "
+      "ssd_temp=%d soc_power=%d fps_pill=%d frame_graph=%d graph_opacity=%d",
+      loaded ? "yes" : "no",
+      loaded_path && loaded_path[0] ? loaded_path : "<defaults>",
+      s.overlay_enabled, s.overlay_detail, s.overlay_pos, s.overlay_align,
+      s.overlay_font_size, s.overlay_theme, s.overlay_opacity,
+      s.overlay_margin, s.overlay_system, s.overlay_fps, s.overlay_cpu,
+      s.overlay_gpu, s.overlay_ram, s.overlay_ip, s.overlay_fan,
+      s.overlay_cpu_clock, s.overlay_gpu_clock, s.overlay_ssd_temp,
+      s.overlay_soc_power, s.overlay_fps_pill, s.overlay_frame_graph,
+      s.overlay_frame_graph_opacity);
   /* mtime has 1 s resolution: a file written this second may change again
    * within it, so keep it looking newer for one more check. */
   g_config_mtime = time(nullptr) == mtime ? mtime - 1 : mtime;
