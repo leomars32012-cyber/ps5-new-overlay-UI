@@ -740,6 +740,17 @@ static void check_metric_visibility() {
 }
 
 int main(int argc, char **argv) {
+  /* Every supported theme resolves to a complete palette. */
+  const Theme all_themes[] = {
+      Theme::Classic, Theme::Mono, Theme::Aurora, Theme::Vice,
+      Theme::Emerald, Theme::Sunset, Theme::Arctic, Theme::Crimson, Theme::Gold};
+  for (const Theme theme : all_themes) {
+    const Palette p = palette(theme);
+    CHECK(p.text.a > 0.0f && p.heading.a > 0.0f && p.label.a > 0.0f,
+          "theme has readable text colours");
+    CHECK(p.good.a > 0.0f && p.warn.a > 0.0f && p.bad.a > 0.0f,
+          "theme has all status colours");
+  }
   check_helpers();
   g_combo = "metric visibility";
   check_metric_visibility();
