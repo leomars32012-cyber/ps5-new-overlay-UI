@@ -50,7 +50,7 @@ inline constexpr std::array<KeySpec, 24> kKeys = {{
     {"font_size", {"small", "medium", "large"}, true},
     {"detail", {"minimal", "compact", "panel", "full"}, true},
     {"opacity", {"0", "10", "20", "30", "40", "50", "60", "70", "80", "90", "100"}, false},
-    {"theme", {"classic", "mono", "aurora", "vice"}, true},
+    {"theme", {"classic", "mono", "aurora", "vice", "emerald", "sunset", "arctic", "crimson", "gold"}, true},
     {"brand", {"true", "false"}, false},
     {"fps_pill", {"true", "false"}, false},
     {"system", {"true", "false"}, false},
