@@ -1,171 +1,78 @@
-# PS5 Hardware Overlay 🎮
+# PS5 FPS Monitor Overlay
 
-Легковесный автономный оверлей мониторинга температур и нагрузки для взломанной PlayStation 5 (поддержка FW 1.xx - 10.xx+).
+This project is based on **[rawalakshay/fps-monitor-panel](https://github.com/rawalakshay/fps-monitor-panel)**. The upstream project is the actual overlay foundation, not merely a reference implementation.
 
-[English](#english) | [Русский](#русский)
+The imported upstream snapshot is pinned in `upstream/FPS_MONITOR_PANEL_UPSTREAM_COMMIT`. Its original source, build system, settings application, third-party notices and license are retained under `upstream/fps-monitor-panel/`.
 
----
+## Architecture
 
-## Русский
+### Primary foundation: FPS Monitor Panel
 
-Специализированное легковесное решение для мониторинга аппаратных показателей PlayStation 5 в реальном времени. В отличие от громоздких наборов вроде onionHEN / etaHEN, данный проект сфокусирован **исключительно на функции оверлея**: он не содержит лишних инструментов, читов, FTP-серверов или тяжелых зависимостей и не рискует вызвать панику ядра на высоких прошивках (включая FW 10.20).
+The shipped payload is built from the upstream implementation. It owns:
 
-### Основные возможности
+- ShellUI integration and overlay lifecycle.
+- Scene/layout renderer and all overlay presentation.
+- FPS sampling and publication.
+- Frame-time timeline, AVG/LOW statistics, hitch detection and target tracking.
+- CPU per-core sampling, CPU/SoC temperatures, GPU core rail power and system RAM.
+- Settings web app, configuration and payload startup/watchdog.
 
-- ⚡ **Аппаратный счётчик кадров (FPS Counter)**: Замер реальной частоты вертикальной синхронизации и смены кадров дисплея через Display Controller Engine (`/dev/dce`) или секлок OnionHEN (`/system_tmp/fps_sample`).
-- 🖥️ **Нативный экранный оверлей (In-Game HUD)**: Настоящая полоса мониторинга, отрисовываемая прямо поверх игр через внедрение в `SceShellUI` (с активным `kstuff`).
-- 🎨 **Цветовая дифференциация метрик**:
-  - **FPS**: золотисто-жёлтый (`#FFEB3B`)
-  - **CPU**: зеленый (`#66FF66`)
-  - **GPU**: фиолетовый (`#B366FF`)
-  - **RAM**: оранжевый (`#FFB34D`)
-  - **FAN**: бирюзовый (`#33E0FF`)
-- 🔕 **Без спама уведомлениями**: Постоянно всплывающие тосты отключены по умолчанию, чтобы не мешать погружению в игру.
-- 🌡️ **Температура CPU & GPU (SoC)**: Прямое чтение сенсоров в реальном времени (°C).
-- 💾 **Использование RAM & VRAM**: Объем занятой системной и видеопамяти.
-- 🌀 **Обороты кулера (Fan Duty)**: Скорость вращения вентилятора в процентах.
-- ⚙️ **Гибкая конфигурация**: Настройка через файл `/data/ps5_overlay/config.ini`.
+### Additions from the previous project
 
----
+The original repository's `src/` and `include/` implementation is retained as a telemetry reference. Its loader, injector, daemon and HUD renderer are **not** part of the new payload architecture.
 
-### Отображение в играх
+Only missing telemetry capabilities are being transferred into the upstream sampling and scene pipeline:
 
-- **Наэкранный HUD в играх (SceShellUI)**:
-  - Внедряется автоматически в системный процесс `SceShellUI`.
-  - В верхней части экрана во время любой игры отображается аккуратная полупрозрачная плашка с цветными показателями:
-    ```text
-    FPS: 60  |  CPU: 58°C  |  GPU: 61°C  |  RAM: 4.8 GB  |  FAN: 35%
-    ```
+- **VRAM usage:** sampled independently with `get_page_table_stats(VM_SYSTEM, PAGE_TABLE_VRAM, ...)`. It is displayed separately from system RAM.
+- **Fan duty:** sampled through the optional `sceKernelGetCurrentFanDuty` symbol. The raw 0–1024 duty value is converted to a percentage.
 
----
+The new readings have independent validity flags. An unavailable or invalid reading is rendered as a dash rather than a false zero.
 
-### Быстрый старт
+## Telemetry interpretation and limitations
 
-#### Вариант 1: Запуск через ELF Loader (Port 9020 / 9021)
-После активации джейлбрейка отправьте скомпилированный `.elf` на консоль:
+- The upstream CPU per-core calculation is retained; the previous project's aggregate-load approximation is not used.
+- The temperature shown in the GPU column is the upstream SoC sensor 0 reading. It is not claimed to be a separately verified GPU-die sensor.
+- GPU power is the upstream GPU core rail reading. It is not total APU/SoC power.
+- VRAM page-table type 2 and its reported units still require validation on the target console.
+- Fan duty depends on the optional firmware symbol being available.
+- No GPU busy/utilization counter is claimed.
+
+**Hardware validation is still required.** The current target for console validation is PS5 firmware 13.60. A successful cross-build does not establish that every metric is supported or correctly interpreted on that firmware.
+
+## Build and test
+
+Requirements for the PS5 payload build:
+
+- Full PS5 Payload SDK (the CI currently uses v0.43).
+- The SDK's `prospero-cmake` and `prospero-clang` toolchain.
+- CMake, Ninja, Python 3 and standard build utilities.
+
+Set the SDK path, then run the upstream build script:
+
 ```bash
-# Через Netcat на порт 9020 (или 9021):
-nc -w 3 <IP_PS5> 9020 < ps5_overlay.elf
-```
-или воспользуйтесь любой программой для отправки пейлоадов (PS5 Payload Sender / Netcat GUI).
+export PS5_PAYLOAD_SDK=/opt/ps5-payload-sdk
 
-#### Вариант 2: Автозапуск через менеджер пейлоадов
-Скопируйте `ps5_overlay.elf` в директорию пейлоадов на консоли:
+# Host-only tests for the scene renderer and settings web helpers
+bash upstream/fps-monitor-panel/scripts/test.sh
+
+# Build the PS5 payload
+bash upstream/fps-monitor-panel/scripts/build.sh --release --jobs 8
+```
+
+The output is:
+
 ```text
-/data/OnionHEN/payloads/ps5_overlay.elf
-# или
-/data/etaHEN/payloads/ps5_overlay.elf
-```
-и включите автозапуск в меню консоли.
-
----
-
-### Настройка (`config.ini`)
-
-Файл конфигурации можно разместить по пути:
-```text
-/data/ps5_overlay/config.ini
-```
-Пример настроек (`config.ini.example`):
-```ini
-[ps5_overlay]
-enabled = true
-show_fps = true             ; Счётчик FPS (Hardware DCE / OnionHEN)
-show_cpu_temp = true        ; Температура CPU
-show_cpu_load = true        ; Загрузка CPU %
-show_all_cores = false      ; Нагрузка по ядрам
-show_gpu_temp = true        ; Температура GPU (SOC)
-show_gpu_load = true        ; Загрузка VRAM %
-show_ram = true             ; Использование RAM
-show_fan = true             ; Обороты кулера %
-interval_ms = 1000          ; Опрос сенсоров (мс)
-
-toast_notifications = false ; Экранный OSD в играх (true/false)
-toast_interval_sec = 10     ; Интервал обновления OSD (сек)
+upstream/fps-monitor-panel/build/bin/fps-monitor.elf
 ```
 
----
+GitHub Actions runs the host tests and PS5 SDK build on the development branch. The resulting ELF is uploaded as a workflow artifact. Releases are created only for version tags or an explicit manual release request.
 
-<a name="english"></a>
-## English
+## Licensing and attribution
 
-A lightweight, standalone hardware monitoring overlay for jailbroken PlayStation 5 consoles (FW 1.xx - 10.xx+).
+This project adopts **GPL-3.0-or-later** for the integrated upstream foundation. The upstream license and third-party notices are retained. Original copyright and license notices in imported files must remain intact.
 
-Unlike full HEN suites (like onionHEN or etaHEN), this project focuses **exclusively on the overlay experience**: minimal footprint, zero bloat, no cheats, and no risk of kernel panics on newer firmwares (including FW 10.20).
+See:
 
-### Features
-
-- ⚡ **Real-Time In-Game FPS Counter**: Accurate framerate monitoring sampled via Display Controller Engine (`/dev/dce`) hardware flip deltas or OnionHEN seqlock sampler (`/system_tmp/fps_sample`).
-- 🖥️ **Native In-Game HUD**: Translucent top-screen status bar rendered seamlessly over active gameplay via Mono PUI in `SceShellUI`.
-- 🌡️ **CPU Temperature**: Real-time reading of internal Zen 2 CPU sensors.
-- 🎯 **CPU Utilization**: Accurate CPU load percentage and 8-core tracks.
-- 🔥 **GPU / SoC Temperature**: APU / SoC thermal monitoring.
-- 🎮 **VRAM Usage**: Video memory usage percentage and MB.
-- 💾 **System RAM**: Memory footprint in GB and percentage (`4.8 / 16.0 GB`).
-- 🌀 **Fan Duty Cycle**: Real-time cooling fan speed percentage.
-- 🔕 **Zero Toast Spam**: Notification popups disabled by default to protect gameplay immersion.
-- ⚙️ **Configurable**: Managed via `/data/ps5_overlay/config.ini`.
-
----
-
-## Сборка и GitHub Releases
-
-Проект настроен для автоматической компиляции и выпуска релизов через **GitHub Actions**:
-
-1. **Автоматическая сборка**: При каждом коммите в ветку `main` GitHub Actions собирает `ps5_overlay.elf` с помощью актуального `ps5-payload-sdk` и сохраняет артефакты.
-2. **Публикация релиза**:
-   - При создании тега версии:
-     ```bash
-     git tag v1.0.1
-     git push origin v1.0.1
-     ```
-   - Или вручную через вкладку **Actions** -> **Build and Release PS5 Overlay** -> **Run workflow**.
-
-GitHub Action автоматически скомпилирует бинарный файл, сгенерирует `SHA256SUMS.txt` и прикрепит их к новому релизу в разделе **Releases**.
-
----
-
-## Лицензия
-
-Распространяется под лицензией MIT / GPLv3.
-Отдельная благодарность разработчикам `ps5-payload-dev`, `etaHEN` и сообществу сцены PS5.
-
-
-## Live toggle control (fork)
-
-This fork adds live visibility control. The injected ShellUI HUD watches `/data/ps5_overlay/config.ini` and hides or shows the complete HUD without reinjection.
-
-A small `ps5_overlay_toggle.elf` payload is also built. Running it flips `enabled` in the config and sends a confirmation notification. This makes the overlay controllable from etaHEN's payload/plugin UI without restarting the main overlay daemon.
-
-### First install
-
-Create `/data/ps5_overlay/config.ini` from `config.ini.example`. To start hidden:
-
-```ini
-[ps5_overlay]
-enabled = false
-```
-
-The daemon can still be launched. When the toggle payload changes the value to `true`, the already-injected HUD becomes visible; changing it back to `false` hides it again.
-
-A true Home-screen Media/PKG application is intentionally not part of this change. That requires a separate PS5 application/PKG project and is independent of the overlay ELF.
-
-
-## Live toggle control (fork)
-
-This fork adds live visibility control. The injected ShellUI HUD watches `/data/ps5_overlay/config.ini` and hides or shows the complete HUD without reinjection.
-
-A small `ps5_overlay_toggle.elf` payload is also built. Running it flips `enabled` in the config and sends a confirmation notification. This makes the overlay controllable from etaHEN's payload/plugin UI without restarting the main overlay daemon.
-
-### First install
-
-Create `/data/ps5_overlay/config.ini` from `config.ini.example`. To start hidden:
-
-```ini
-[ps5_overlay]
-enabled = false
-```
-
-The daemon can still be launched. When the toggle payload changes the value to `true`, the already-injected HUD becomes visible; changing it back to `false` hides it again.
-
-A true Home-screen Media/PKG application is intentionally not part of this change. That requires a separate PS5 application/PKG project and is independent of the overlay ELF.
+- [LICENSE](LICENSE)
+- [Upstream third-party notices](upstream/fps-monitor-panel/THIRD_PARTY_NOTICES.md)
+- [Upstream project](https://github.com/rawalakshay/fps-monitor-panel)
