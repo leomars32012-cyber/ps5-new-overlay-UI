@@ -193,6 +193,16 @@ fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
 .key { font-family: var(--font-mono); font-size: 11px; color: var(--muted); margin-left: 6px; font-weight: 400; white-space: nowrap; }
 .changed-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); margin-left: 6px; vertical-align: 2px; }
 
+.metric-order { padding: 4px 18px 14px; }
+.metric-order-intro { margin: 0 0 10px; color: var(--muted); font-size: 13px; line-height: 1.45; }
+.metric-order-list { display: grid; gap: 6px; }
+.metric-order-row { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 6px 8px 6px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+.metric-order-name { flex: 1; min-width: 0; font-size: 14px; font-weight: 500; }
+.metric-order-state { color: var(--muted); font-size: 11px; margin-left: 6px; }
+.metric-order-actions { display: flex; gap: 4px; }
+.metric-order-actions button { width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 7px; background: var(--sunken); color: var(--fg); font-size: 16px; cursor: pointer; }
+.metric-order-actions button:disabled { opacity: .35; cursor: not-allowed; }
+
 .seg { display: flex; padding: 3px; background: var(--sunken); border: 1px solid var(--line); border-radius: 11px; }
 .seg button {
   flex: 1 1 0; min-width: 0; min-height: 40px; border: 0; border-radius: 8px; background: transparent;
@@ -333,7 +343,8 @@ fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
     frame_graph: true, frame_graph_opacity: 85, margin: 20,
     show_fps: true, show_cpu: true, show_gpu: true, show_memory: true,
     show_ip_address: false, show_fan_duty: false,
-    show_cpu_clock: true, show_gpu_clock: true, show_ssd_temp: true, show_soc_power: true
+    show_cpu_clock: true, show_gpu_clock: true, show_ssd_temp: true, show_soc_power: true,
+    metrics_order: 'cpu,gpu,memory,fan,ip,cpu_clock,gpu_clock,ssd_temp,soc_power'
   };
   const INI_ORDER = Object.keys(DEFAULTS);
 
@@ -490,6 +501,86 @@ fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
     settingsEl.appendChild(card);
   });
 
+  // Every independent system metric can move. Hidden metrics stay in this
+  // list so toggling visibility never destroys the user's chosen order.
+  const ORDER_METRICS = [
+    { key: 'cpu', label: 'CPU', visible: 'show_cpu' },
+    { key: 'gpu', label: 'GPU', visible: 'show_gpu' },
+    { key: 'memory', label: 'Memory', visible: 'show_memory' },
+    { key: 'fan', label: 'Fan speed', visible: 'show_fan_duty' },
+    { key: 'ip', label: 'IP address', visible: 'show_ip_address' },
+    { key: 'cpu_clock', label: 'CPU clock', visible: 'show_cpu_clock' },
+    { key: 'gpu_clock', label: 'GPU clock', visible: 'show_gpu_clock' },
+    { key: 'ssd_temp', label: 'SSD temperature', visible: 'show_ssd_temp' },
+    { key: 'soc_power', label: 'SoC power', visible: 'show_soc_power' }
+  ];
+  const ORDER_KEYS = ORDER_METRICS.map((m) => m.key);
+  const ORDER_LABELS = Object.fromEntries(ORDER_METRICS.map((m) => [m.key, m]));
+  const orderCard = document.createElement('section');
+  orderCard.className = 'card group';
+  orderCard.innerHTML = '<h3>Metric order</h3><div class="metric-order">' +
+    '<p class="metric-order-intro">Move any system metric up or down. Hidden metrics keep their position and return to that position when enabled.</p>' +
+    '<div class="metric-order-list" id="metric-order-list"></div></div>';
+  settingsEl.appendChild(orderCard);
+  const orderList = $('metric-order-list');
+
+  function normalizedOrder(value) {
+    const input = String(value || '').split(',');
+    const seen = {};
+    const out = [];
+    input.forEach((key) => {
+      if (ORDER_KEYS.indexOf(key) >= 0 && !seen[key]) {
+        seen[key] = true;
+        out.push(key);
+      }
+    });
+    ORDER_KEYS.forEach((key) => { if (!seen[key]) out.push(key); });
+    return out;
+  }
+
+  function moveMetric(key, delta) {
+    const order = normalizedOrder(draft.metrics_order);
+    const from = order.indexOf(key);
+    const to = from + delta;
+    if (from < 0 || to < 0 || to >= order.length) return;
+    const moved = order.splice(from, 1)[0];
+    order.splice(to, 0, moved);
+    draft.metrics_order = order.join(',');
+    render();
+  }
+
+  function renderMetricOrder() {
+    const order = normalizedOrder(draft.metrics_order);
+    orderList.innerHTML = '';
+    order.forEach((key, index) => {
+      const metric = ORDER_LABELS[key];
+      const row = document.createElement('div');
+      row.className = 'metric-order-row';
+      const name = document.createElement('div');
+      name.className = 'metric-order-name';
+      name.textContent = metric.label;
+      const state = document.createElement('span');
+      state.className = 'metric-order-state';
+      state.textContent = draft[metric.visible] ? 'Visible' : 'Hidden';
+      name.appendChild(state);
+      const actions = document.createElement('div');
+      actions.className = 'metric-order-actions';
+      const up = document.createElement('button');
+      up.type = 'button'; up.textContent = '↑';
+      up.setAttribute('aria-label', 'Move ' + metric.label + ' up');
+      up.disabled = index === 0 || !ready || busy;
+      up.addEventListener('click', () => moveMetric(key, -1));
+      const down = document.createElement('button');
+      down.type = 'button'; down.textContent = '↓';
+      down.setAttribute('aria-label', 'Move ' + metric.label + ' down');
+      down.disabled = index === order.length - 1 || !ready || busy;
+      down.addEventListener('click', () => moveMetric(key, 1));
+      actions.appendChild(up); actions.appendChild(down);
+      row.appendChild(name); row.appendChild(actions);
+      orderList.appendChild(row);
+    });
+  }
+
   const ini = document.createElement('details');
   ini.className = 'card ini';
   ini.innerHTML = `<summary>config.ini<span>[overlay] keys set here</span></summary>
@@ -571,6 +662,7 @@ fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
       }
       $(id + '-dot').hidden = v === saved[it.key];
     });
+    renderMetricOrder();
 
     const n = INI_ORDER.filter((k) => draft[k] !== saved[k]).length;
     const msg = $('save-msg');
