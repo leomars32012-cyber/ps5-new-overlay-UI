@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <string>
 #include <unordered_map>
 
@@ -47,12 +48,14 @@ struct Widget {
   std::string text;
   int pt = 0;     /* text only: font the label was created with */
   int weight = 0;
-  bool seen = false;
+  uint64_t seen_generation = 0;
 };
 
 /* Pinned gchandles keep every cached widget alive and unmoved while native
  * code holds the raw pointer. */
 std::unordered_map<std::string, Widget> g_widgets;
+/* Scene generation replaces a full-cache seen-flag reset on every apply. */
+uint64_t g_scene_generation = 0;
 
 /* Two full-screen transparent containers fix the z-order once: anything in
  * the rect layer draws under anything in the text layer, however late it was
@@ -277,7 +280,7 @@ void apply_rect(MonoObject *layer, const Rect &r) {
   Widget *w = it != g_widgets.end() ? &it->second : create_rect(layer, r);
   if (!w)
     return;
-  w->seen = true;
+  w->seen_generation = g_scene_generation;
   place_panel(*w, r.x, r.y, r.w, r.h);
   w->x = r.x;
   w->y = r.y;
@@ -387,13 +390,13 @@ bool overlay_scene_apply(const Scene &scene) {
       !ensure_layer(g_text_layer, root, "id_osc_layer_texts", scene))
     return apply_failed("cannot create or pin a layer panel");
   g_layer_root = root;
+  ++g_scene_generation;
+  if (g_scene_generation == 0)
+    ++g_scene_generation;
   if (g_apply_error) {
     g_apply_error = nullptr;
     LOG_INFO("overlay: scene drawing recovered");
   }
-
-  for (auto &entry : g_widgets)
-    entry.second.seen = false;
 
   for (const Rect &r : scene.rects)
     apply_rect(g_rect_layer.obj, r);
@@ -404,7 +407,7 @@ bool overlay_scene_apply(const Scene &scene) {
    * exits, graph columns not yet filled) parks off-screen. */
   for (auto &entry : g_widgets) {
     Widget &w = entry.second;
-    if (w.seen || w.x == kOff)
+    if (w.seen_generation == g_scene_generation || w.x == kOff)
       continue;
 #if defined(PS5_OVERLAY_PERF_DIAGNOSTICS)
     onion::overlay::perf::record_property_update();
