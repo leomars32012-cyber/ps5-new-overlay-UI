@@ -68,12 +68,15 @@ jobs:
           LLVM_CONFIG: /usr/bin/llvm-config-18
         run: |
           export PATH="/opt/ps5-payload-sdk/bin:/usr/lib/llvm-18/bin:${PATH}"
-          bash upstream/fps-monitor-panel/scripts/build.sh --release --jobs "$(nproc)"
+          prospero-cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DPS5_PAYLOAD_SDK="${PS5_PAYLOAD_SDK}"
+          cmake --build build --target fps_monitor --verbose -j"$(nproc)"
 
       - name: Prepare build artifacts
         run: |
           mkdir -p dist
-          cp upstream/fps-monitor-panel/build/bin/fps-monitor.elf dist/fps-monitor.elf
+          cp build/bin/fps-monitor.elf dist/fps-monitor.elf
           cp upstream/fps-monitor-panel/config.ini.example dist/config.ini.example
           cd dist
           sha256sum fps-monitor.elf > SHA256SUMS.txt
