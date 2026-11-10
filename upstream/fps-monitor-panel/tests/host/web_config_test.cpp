@@ -28,6 +28,10 @@ int main() {
   assert(find_key("show_ip_address"));
   assert(valid_value(*find_key("show_fan_duty"), "true"));
   assert(!valid_value(*find_key("show_fan_duty"), "yes"));
+  assert(valid_value(*find_key("show_cpu_clock"), "true"));
+  assert(valid_value(*find_key("show_gpu_clock"), "false"));
+  assert(valid_value(*find_key("show_ssd_temp"), "true"));
+  assert(valid_value(*find_key("show_soc_power"), "true"));
 
   /* form decode */
   std::string s;
@@ -128,14 +132,14 @@ int main() {
   assert(config_json({"true", "top", "left", "medium", "panel", "85",
                       "classic", "false", "false", "true", "true", "85",
                       "20", "true", "true", "true", "true", "false",
-                      "false"}) ==
+                      "false", "true", "true", "true", "true"}) ==
          "{\"enabled\":true,\"edge\":\"top\",\"align\":\"left\","
          "\"font_size\":\"medium\",\"detail\":\"panel\",\"opacity\":85,"
          "\"theme\":\"classic\",\"brand\":false,\"fps_pill\":false,"
          "\"system\":true,\"frame_graph\":true,\"frame_graph_opacity\":85,"
          "\"margin\":20,\"show_fps\":true,\"show_cpu\":true,"
          "\"show_gpu\":true,\"show_memory\":true,"
-         "\"show_ip_address\":false,\"show_fan_duty\":false}");
+         "\"show_ip_address\":false,\"show_fan_duty\":false,\"show_cpu_clock\":true,\"show_gpu_clock\":true,\"show_ssd_temp\":true,\"show_soc_power\":true}");
 
   std::puts("web_config_test: ok");
   return 0;

@@ -332,7 +332,8 @@ fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
     opacity: 85, theme: 'classic', fps_pill: false, system: true,
     frame_graph: true, frame_graph_opacity: 85, margin: 20,
     show_fps: true, show_cpu: true, show_gpu: true, show_memory: true,
-    show_ip_address: false, show_fan_duty: false
+    show_ip_address: false, show_fan_duty: false,
+    show_cpu_clock: true, show_gpu_clock: true, show_ssd_temp: true, show_soc_power: true
   };
   const INI_ORDER = Object.keys(DEFAULTS);
 
@@ -362,7 +363,11 @@ fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
       { key: 'show_gpu', label: 'GPU', hint: 'Show GPU temperature and usage', type: 'bool' },
       { key: 'show_memory', label: 'Memory', hint: 'Show system memory usage', type: 'bool' },
       { key: 'show_ip_address', label: 'IP address', hint: 'Show the console LAN address', type: 'bool' },
-      { key: 'show_fan_duty', label: 'Fan speed', hint: 'Show current fan duty percentage when available', type: 'bool' }
+      { key: 'show_fan_duty', label: 'Fan speed', hint: 'Show current fan duty percentage when available', type: 'bool' },
+      { key: 'show_cpu_clock', label: 'CPU clock', hint: 'Show the highest reported CPU core clock', type: 'bool' },
+      { key: 'show_gpu_clock', label: 'GPU clock', hint: 'Show GPU GFXCLK when available', type: 'bool' },
+      { key: 'show_ssd_temp', label: 'SSD temperature', hint: 'Show M.2 NVMe temperature sensor channel 2', type: 'bool' },
+      { key: 'show_soc_power', label: 'SoC power', hint: 'Show the sum of the eight reported SoC power rails', type: 'bool' }
     ]},
     { title: 'Panel contents', items: [
       { key: 'system', label: 'System row', hint: 'CPU, GPU and memory under the charts', type: 'bool' },

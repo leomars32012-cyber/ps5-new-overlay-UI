@@ -643,6 +643,15 @@ struct SystemReadings {
   /** GPU core rail, watts. The console has no GPU busy counter, so this is
    *  the load proxy. */
   float gpu_power_w = 0.0f;
+  bool soc_power_valid = false;
+  /** Sum of the eight reported SoC rail power values, watts. */
+  float soc_power_w = 0.0f;
+  bool cpu_clock_valid = false;
+  int cpu_clock_mhz = 0;
+  bool gpu_clock_valid = false;
+  int gpu_clock_mhz = 0;
+  bool ssd_temp_valid = false;
+  int ssd_temp = 0; /* °C, M.2 sensor channel 2 */
   bool ram_valid = false;
   int ram_used_mb = 0;
   int ram_total_mb = 0;
@@ -716,6 +725,10 @@ struct Options {
   bool show_memory = true;
   bool show_ip_address = false;
   bool show_fan_duty = false;
+  bool show_cpu_clock = true;
+  bool show_gpu_clock = true;
+  bool show_ssd_temp = true;
+  bool show_soc_power = true;
   /** Frame-time graph box along the bottom edge (overlay.frame_graph). */
   bool frame_graph = true;
   /** The graph box's own background opacity (overlay.frame_graph_opacity). */
@@ -864,6 +877,10 @@ inline Readings sanitized(const Readings &in) {
       core = 0.0f;
   s.cpu_valid = s.cpu_valid && ok(s.cpu_pct);
   s.power_valid = s.power_valid && ok(s.gpu_power_w) && s.gpu_power_w >= 0.0f;
+  s.soc_power_valid = s.soc_power_valid && ok(s.soc_power_w) && s.soc_power_w >= 0.0f;
+  s.cpu_clock_valid = s.cpu_clock_valid && s.cpu_clock_mhz > 0 && s.cpu_clock_mhz <= 10000;
+  s.gpu_clock_valid = s.gpu_clock_valid && s.gpu_clock_mhz > 0 && s.gpu_clock_mhz <= 10000;
+  s.ssd_temp_valid = s.ssd_temp_valid && s.ssd_temp >= 20 && s.ssd_temp <= 130;
   s.ram_valid = s.ram_valid && s.ram_total_mb > 0 && s.ram_used_mb >= 0 &&
                 s.ram_used_mb <= s.ram_total_mb;
   s.vram_valid = s.vram_valid && s.vram_total_mb > 0 && s.vram_used_mb >= 0 &&
@@ -1270,9 +1287,15 @@ inline float system_block(Builder &b, const Metrics &m, float x0, float iw,
   const bool memory = opt.show_memory;
   const bool fan = opt.show_fan_duty;
   const bool ip = opt.show_ip_address;
+  const bool cpu_clock = opt.show_cpu_clock;
+  const bool gpu_clock = opt.show_gpu_clock;
+  const bool ssd_temp = opt.show_ssd_temp;
+  const bool soc_power = opt.show_soc_power;
   const int primary_count = static_cast<int>(cpu) + static_cast<int>(gpu) +
                             static_cast<int>(memory);
-  if (primary_count == 0 && !fan && !ip)
+  const int detail_count = static_cast<int>(cpu_clock) + static_cast<int>(gpu_clock) +
+                           static_cast<int>(ssd_temp) + static_cast<int>(soc_power);
+  if (primary_count == 0 && !fan && !ip && detail_count == 0)
     return y;
 
   y += m.section_gap;
@@ -1405,6 +1428,45 @@ inline float system_block(Builder &b, const Metrics &m, float x0, float iw,
              m.label_pt, kWeightValue, TextAlign::Left, m.label_pt);
     }
     y = by + m.sys_bar_h;
+  }
+
+  /* Hardware detail metrics get their own row so the main CPU/GPU/MEM
+   * columns and the existing fan/IP row never become cramped. */
+  if (detail_count > 0) {
+    if (primary_count > 0 || secondary_count > 0)
+      y += m.section_gap;
+    const float gap = detail_count > 1 ? m.sys_col_gap : 0.0f;
+    const float cw = std::floor((iw - gap * (detail_count - 1)) /
+                                static_cast<float>(detail_count));
+    const float hy = y, vy = y + m.caption_h;
+    float x = x0;
+    auto detail_metric = [&](const char *id, const char *label,
+                             const std::string &value, Rgba color) {
+      char label_id[48], value_id[48];
+      std::snprintf(label_id, sizeof(label_id), "id_osc_%s_l", id);
+      std::snprintf(value_id, sizeof(value_id), "id_osc_%s_v", id);
+      heading(label_id, x, label, hy);
+      b.text(value_id, x, cw, vy, m.sys_val_h, value, color, m.stat_pt,
+             kWeightValue, TextAlign::Left, m.stat_pt);
+      x += cw + gap;
+    };
+    if (cpu_clock)
+      detail_metric("cclk", "CPU CLK",
+                    s.cpu_clock_valid ? fmt("%.0f MHz", s.cpu_clock_mhz) : kDash,
+                    kText);
+    if (gpu_clock)
+      detail_metric("gclk", "GPU CLK",
+                    s.gpu_clock_valid ? fmt("%.0f MHz", s.gpu_clock_mhz) : kDash,
+                    kText);
+    if (ssd_temp)
+      detail_metric("ssd", "SSD TEMP",
+                    s.ssd_temp_valid ? fmt_temp(s.ssd_temp) : kDash,
+                    s.ssd_temp_valid ? temp_color(s.ssd_temp, kGpuTempScale) : kText);
+    if (soc_power)
+      detail_metric("socpwr", "SOC POWER",
+                    s.soc_power_valid ? fmt_watts(s.soc_power_w) : kDash,
+                    kText);
+    y = vy + m.sys_val_h;
   }
   return y;
 }
@@ -1545,6 +1607,27 @@ inline Scene build_compact(const Options &opt, const Readings &r,
       next_metric();
       cell("sip", "IP", s.ip_valid ? s.ip_address : kDash,
            kText, {"255.255.255.255"}, "", kLabel, {});
+    }
+    if (opt.show_cpu_clock) {
+      next_metric();
+      cell("scclk", "CCLK", s.cpu_clock_valid ? fmt("%.0f", s.cpu_clock_mhz) : kDash,
+           kText, {"9999"}, s.cpu_clock_valid ? "MHz" : "", kLabel, {"MHz"});
+    }
+    if (opt.show_gpu_clock) {
+      next_metric();
+      cell("sgclk", "GCLK", s.gpu_clock_valid ? fmt("%.0f", s.gpu_clock_mhz) : kDash,
+           kText, {"9999"}, s.gpu_clock_valid ? "MHz" : "", kLabel, {"MHz"});
+    }
+    if (opt.show_ssd_temp) {
+      next_metric();
+      cell("sssd", "SSD", s.ssd_temp_valid ? fmt_temp(s.ssd_temp) : kDash,
+           s.ssd_temp_valid ? temp_color(s.ssd_temp, kGpuTempScale) : kText,
+           {"100°"}, "", kLabel, {});
+    }
+    if (opt.show_soc_power) {
+      next_metric();
+      cell("ssocpwr", "SOC PWR", s.soc_power_valid ? fmt_watts(s.soc_power_w) : kDash,
+           kText, {"999 W"}, "", kLabel, {});
     }
   }
   x += px(14.0f);

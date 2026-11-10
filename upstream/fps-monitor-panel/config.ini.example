@@ -47,6 +47,11 @@ fps_pill=false
 # only in the compact strip).
 # Available values: true, false
 system=true
+# Independent hardware telemetry visibility switches.
+show_cpu_clock=true
+show_gpu_clock=true
+show_ssd_temp=true
+show_soc_power=true
 # frame_graph shows the 7.5 s frame-time graph centred along the bottom edge
 # (the top edge when edge=bottom).
 # Available values: true, false

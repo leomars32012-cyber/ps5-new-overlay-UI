@@ -817,6 +817,14 @@ bool apply_parser(IniParser *parser, Settings *out) {
                                out->overlay_ip);
   out->overlay_fan = parse_bool(ini_get(parser, "overlay.show_fan_duty"),
                                 out->overlay_fan);
+  out->overlay_cpu_clock = parse_bool(ini_get(parser, "overlay.show_cpu_clock"),
+                                      out->overlay_cpu_clock);
+  out->overlay_gpu_clock = parse_bool(ini_get(parser, "overlay.show_gpu_clock"),
+                                      out->overlay_gpu_clock);
+  out->overlay_ssd_temp = parse_bool(ini_get(parser, "overlay.show_ssd_temp"),
+                                     out->overlay_ssd_temp);
+  out->overlay_soc_power = parse_bool(ini_get(parser, "overlay.show_soc_power"),
+                                      out->overlay_soc_power);
   out->overlay_font_size = parse_overlay_font_size(
       ini_get(parser, "overlay.font_size"), out->overlay_font_size);
   if (const char *order = ini_get(parser, "overlay.order")) {
@@ -1049,6 +1057,11 @@ std::string settings_serialize(const Settings &in) {
   b += "# show_fan_duty displays the current fan duty in percent.\n";
   b += "# Available values: true, false\n";
   b += "show_fan_duty=" + bool_text(in.overlay_fan) + "\n";
+  b += "# Independent hardware telemetry visibility switches.\n";
+  b += "show_cpu_clock=" + bool_text(in.overlay_cpu_clock) + "\n";
+  b += "show_gpu_clock=" + bool_text(in.overlay_gpu_clock) + "\n";
+  b += "show_ssd_temp=" + bool_text(in.overlay_ssd_temp) + "\n";
+  b += "show_soc_power=" + bool_text(in.overlay_soc_power) + "\n";
   b += "# font_size sets the monitor bar text size.\n";
   b += "# Available values: small, medium, large\n";
   b += "font_size=" + std::string(overlay_font_size_name(in.overlay_font_size)) +

@@ -18,8 +18,8 @@ struct KeySpec {
   bool quoted;                            // JSON string (else bool/number)
 };
 
-/* The 19 [overlay] keys the web app edits, in JSON order. */
-inline constexpr std::array<KeySpec, 19> kKeys = {{
+/* The 23 [overlay] keys the web app edits, in JSON order. */
+inline constexpr std::array<KeySpec, 23> kKeys = {{
     {"enabled", {"true", "false"}, false},
     {"edge", {"top", "bottom"}, true},
     {"align", {"left", "center", "right"}, true},
@@ -39,6 +39,10 @@ inline constexpr std::array<KeySpec, 19> kKeys = {{
     {"show_memory", {"true", "false"}, false},
     {"show_ip_address", {"true", "false"}, false},
     {"show_fan_duty", {"true", "false"}, false},
+    {"show_cpu_clock", {"true", "false"}, false},
+    {"show_gpu_clock", {"true", "false"}, false},
+    {"show_ssd_temp", {"true", "false"}, false},
+    {"show_soc_power", {"true", "false"}, false},
 }};
 
 inline const KeySpec *find_key(std::string_view name) {

@@ -53,6 +53,9 @@ bool resolve_symbols(pid_t pid) {
   KERNEL_DLSYM(libkernelsys, sceKernelMprotect);
   KERNEL_DLSYM(libkernelsys, sceKernelGetSocPowerConsumption); /* optional */
   KERNEL_DLSYM(libkernelsys, sceKernelGetCurrentFanDuty); /* optional */
+  KERNEL_DLSYM(libkernelsys, sceKernelGetSocClock); /* optional */
+  KERNEL_DLSYM(libkernelsys, sceKernelGetCpuCoreClock); /* optional */
+  KERNEL_DLSYM(libkernelsys, sceKernelGetCpuFrequency); /* optional */
 
   const int libmono = get_module_handle(pid, "libmonosgen-2.0.sprx");
   KERNEL_DLSYM(libmono, mono_get_root_domain);

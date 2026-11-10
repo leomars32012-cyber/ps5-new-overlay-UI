@@ -223,7 +223,9 @@ bool wants_system() {
          !detail_is(onion::kOverlayDetailMinimal) &&
          (g_settings.overlay_cpu || g_settings.overlay_gpu ||
           g_settings.overlay_ram || g_settings.overlay_ip ||
-          g_settings.overlay_fan);
+          g_settings.overlay_fan || g_settings.overlay_cpu_clock ||
+          g_settings.overlay_gpu_clock || g_settings.overlay_ssd_temp ||
+          g_settings.overlay_soc_power);
 }
 
 scene::Detail scene_detail() {
@@ -514,6 +516,52 @@ void sample_system(unsigned int idle_tid[kCpuCores], int& current_bank) {
   if (s.soc_temp_valid)
     s.soc_temp = t;
 
+  /* M.2 NVMe temperature is exposed by SoC sensor channel 2. */
+  static int ssd_temp_failing = 0;
+  t = 0;
+  rc = sceKernelGetSocSensorTemperature(2, &t);
+  s.ssd_temp_valid = rc == 0 && t >= 20 && t <= 130;
+  log_source_state(s.ssd_temp_valid, ssd_temp_failing,
+                   "sceKernelGetSocSensorTemperature(channel 2)", rc ? rc : t);
+  if (s.ssd_temp_valid)
+    s.ssd_temp = t;
+
+  /* CPU clock: highest reported core clock, then the kernel frequency API. */
+  static int cpu_clock_failing = 0;
+  int cpu_mhz = 0;
+  int core_clocks[16] = {};
+  int cpu_clock_rc = -1;
+  if (sceKernelGetCpuCoreClock &&
+      (cpu_clock_rc = sceKernelGetCpuCoreClock(core_clocks)) == 0) {
+    for (int i = 0; i < 16; ++i)
+      if (core_clocks[i] > cpu_mhz)
+        cpu_mhz = core_clocks[i];
+  }
+  if (cpu_mhz <= 0 && sceKernelGetCpuFrequency) {
+    const long hz = sceKernelGetCpuFrequency();
+    if (hz > 0)
+      cpu_mhz = static_cast<int>(hz / 1000000L);
+  }
+  s.cpu_clock_valid = cpu_mhz > 0 && cpu_mhz <= 10000;
+  log_source_state(s.cpu_clock_valid, cpu_clock_failing,
+                   "CPU clock telemetry", s.cpu_clock_valid ? cpu_mhz : cpu_clock_rc);
+  if (s.cpu_clock_valid)
+    s.cpu_clock_mhz = cpu_mhz;
+
+  /* GPU GFXCLK is domain 20 in the SoC clock array. */
+  static int gpu_clock_failing = 0;
+  uint32_t soc_clocks[32] = {};
+  int gpu_clock_rc = -1;
+  uint32_t gpu_mhz = 0;
+  if (sceKernelGetSocClock &&
+      (gpu_clock_rc = sceKernelGetSocClock(soc_clocks)) == 0)
+    gpu_mhz = soc_clocks[20];
+  s.gpu_clock_valid = gpu_clock_rc == 0 && gpu_mhz > 0 && gpu_mhz <= 10000;
+  log_source_state(s.gpu_clock_valid, gpu_clock_failing,
+                   "sceKernelGetSocClock(GFXCLK)", s.gpu_clock_valid ? static_cast<int>(gpu_mhz) : gpu_clock_rc);
+  if (s.gpu_clock_valid)
+    s.gpu_clock_mhz = static_cast<int>(gpu_mhz);
+
   int used = 0, free_mb = 0, total = 0;
   s.ram_valid = Get_Page_Table_Stats(kVmSystem, kPageTableRam, &used, &free_mb,
                                      &total) &&
@@ -570,6 +618,7 @@ void sample_system(unsigned int idle_tid[kCpuCores], int& current_bank) {
    * larger firmware record cannot overrun the shell's stack. */
   uint32_t raw[0x200 / 4] = {};
   s.power_valid = false;
+  s.soc_power_valid = false;
   if (sceKernelGetSocPowerConsumption) {
     const int prc = sceKernelGetSocPowerConsumption(raw);
     log_source_state(prc == 0, power_failing, "sceKernelGetSocPowerConsumption",
@@ -584,8 +633,14 @@ void sample_system(unsigned int idle_tid[kCpuCores], int& current_bank) {
                                             i ? " " : "", raw[i]));
         LOG_INFO("soc power raw[%d]: %s", kPowerWords, line);
       }
+      /* Keep GPU core rail power separate from the sum of all eight SoC rails. */
       s.gpu_power_w = static_cast<float>(raw[0]) / 1000.0f;
       s.power_valid = raw[0] > 0;
+      uint64_t total_mw = 0;
+      for (int lane = 0; lane < 8; ++lane)
+        total_mw += raw[lane * 3];
+      s.soc_power_w = static_cast<float>(total_mw) / 1000.0f;
+      s.soc_power_valid = total_mw > 0;
     }
   } else if (!power_logged) {
     power_logged = true;
@@ -612,6 +667,10 @@ void scene_render() {
   o.show_memory = g_settings.overlay_ram;
   o.show_ip_address = g_settings.overlay_ip;
   o.show_fan_duty = g_settings.overlay_fan;
+  o.show_cpu_clock = g_settings.overlay_cpu_clock;
+  o.show_gpu_clock = g_settings.overlay_gpu_clock;
+  o.show_ssd_temp = g_settings.overlay_ssd_temp;
+  o.show_soc_power = g_settings.overlay_soc_power;
   o.frame_graph = g_settings.overlay_frame_graph;
   o.graph_opacity = g_settings.overlay_frame_graph_opacity;
   /* kOverlayTheme* values follow the scene::Theme order. */
@@ -676,7 +735,9 @@ void OnRender_Hook(MonoObject* instance) {
       sample_system(idle_thread_id, current_bank);
     else if (g_readings.sys.cpu_valid || g_readings.sys.ram_valid ||
              g_readings.sys.vram_valid || g_readings.sys.fan_valid ||
-             g_readings.sys.power_valid || g_readings.sys.cpu_temp_valid ||
+             g_readings.sys.power_valid || g_readings.sys.soc_power_valid ||
+             g_readings.sys.cpu_clock_valid || g_readings.sys.gpu_clock_valid ||
+             g_readings.sys.ssd_temp_valid || g_readings.sys.cpu_temp_valid ||
              g_readings.sys.soc_temp_valid)
       g_readings.sys = scene::SystemReadings{};
     frames_until_system = kSystemUpdateIntervalFrames;

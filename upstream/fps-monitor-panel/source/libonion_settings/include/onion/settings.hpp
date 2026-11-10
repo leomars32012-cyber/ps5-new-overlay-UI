@@ -397,6 +397,10 @@ struct Settings {
   bool overlay_ip = false;
   /** Show current fan duty (percent) on the overlay bar. */
   bool overlay_fan = false;
+  bool overlay_cpu_clock = true;
+  bool overlay_gpu_clock = true;
+  bool overlay_ssd_temp = true;
+  bool overlay_soc_power = true;
   /** Per-core CPU usage mode on the overlay (id_all_cpu_usage). */
   bool all_cpu_usage = false;
   int overlay_pos = 0; // 0/1 top edge, 2/3 bottom edge

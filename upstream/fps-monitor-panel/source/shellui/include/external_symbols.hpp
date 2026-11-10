@@ -481,6 +481,9 @@ extern int (*sceKernelGetProcessName)(int pid, char* name);
 extern int (*sceKernelGetCurrentFanDuty)(uint16_t* out_duty, uint64_t* out_chassis_info);
 /* 0x70-byte blob of u32 rails (power mW, voltage mV, current mA). */
 extern int (*sceKernelGetSocPowerConsumption)(void* out_raw);
+extern int (*sceKernelGetSocClock)(uint32_t* out_raw_domains);
+extern int (*sceKernelGetCpuCoreClock)(int* out_mhz_per_core);
+extern long (*sceKernelGetCpuFrequency)(void);
 extern  int (*sceKernelJitCreateSharedMemory)(int flags, size_t size, int protection, int *destinationHandle);
 extern  int (*sceKernelJitCreateAliasOfSharedMemory)(int handle, int protection, int *destinationHandle);
 extern  int (*sceKernelJitMapSharedMemory)(int handle, int protection, void **destination);

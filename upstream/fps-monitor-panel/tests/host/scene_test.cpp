@@ -78,6 +78,14 @@ static Fixture make(State st) {
   s.soc_temp = 61;
   s.power_valid = true;
   s.gpu_power_w = 74.0f;
+  s.soc_power_valid = true;
+  s.soc_power_w = 128.0f;
+  s.cpu_clock_valid = true;
+  s.cpu_clock_mhz = 3600;
+  s.gpu_clock_valid = true;
+  s.gpu_clock_mhz = 2200;
+  s.ssd_temp_valid = true;
+  s.ssd_temp = 53;
   s.ram_valid = true;
   s.ram_used_mb = 9830;
   s.ram_total_mb = 12800;
@@ -586,6 +594,10 @@ static void check_metric_visibility() {
   o.show_memory = false;
   o.show_ip_address = true;
   o.show_fan_duty = true;
+  o.show_cpu_clock = true;
+  o.show_gpu_clock = true;
+  o.show_ssd_temp = true;
+  o.show_soc_power = true;
   const Scene s = build_scene(o, f.r, f.h);
   CHECK(find_text(s, "id_osc_fps_v") == nullptr, "FPS hidden");
   CHECK(find_text(s, "id_osc_cpu_l") == nullptr, "CPU hidden");
@@ -596,7 +608,15 @@ static void check_metric_visibility() {
   CHECK(find_text(s, "id_osc_ip_l") != nullptr, "IP has its own heading");
   CHECK(find_text(s, "id_osc_ip_v") != nullptr, "IP has its own value");
   const Text *gpu = find_text(s, "id_osc_gpu_t");
-  CHECK(gpu && gpu->text == "74 W", "GPU detail contains power only");
+  CHECK(gpu && gpu->text == "74 W", "GPU detail contains GPU core power only");
+  CHECK(find_text(s, "id_osc_cclk_v") && find_text(s, "id_osc_cclk_v")->text == "3600 MHz",
+        "CPU clock is independently rendered");
+  CHECK(find_text(s, "id_osc_gclk_v") && find_text(s, "id_osc_gclk_v")->text == "2200 MHz",
+        "GPU GFXCLK is independently rendered");
+  CHECK(find_text(s, "id_osc_ssd_v") && find_text(s, "id_osc_ssd_v")->text == "53°C",
+        "M.2 SSD temperature is independently rendered");
+  CHECK(find_text(s, "id_osc_socpwr_v") && find_text(s, "id_osc_socpwr_v")->text == "128 W",
+        "summed SoC rail power is independently rendered");
   const Text *fan = find_text(s, "id_osc_fan_v");
   CHECK(fan && fan->text == "35%", "fan value is independently readable");
   const Text *ip = find_text(s, "id_osc_ip_v");
@@ -626,6 +646,11 @@ static void check_metric_visibility() {
         "system master hides fan");
   CHECK(find_text(master_off, "id_osc_ip_l") == nullptr,
         "system master hides IP");
+  CHECK(find_text(master_off, "id_osc_cclk_l") == nullptr &&
+            find_text(master_off, "id_osc_gclk_l") == nullptr &&
+            find_text(master_off, "id_osc_ssd_l") == nullptr &&
+            find_text(master_off, "id_osc_socpwr_l") == nullptr,
+        "system master hides added hardware metrics");
 }
 
 int main(int argc, char **argv) {
