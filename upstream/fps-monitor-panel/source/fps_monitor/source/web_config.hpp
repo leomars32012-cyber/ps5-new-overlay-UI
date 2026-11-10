@@ -320,7 +320,7 @@ inline std::string apply_updates(std::string_view ini, const Updates &updates) {
   return out;
 }
 
-/* {"enabled":true,...} from the 23 values in kKeys order. */
+/* {"enabled":true,...} from the 24 values in kKeys order. */
 inline std::string config_json(const std::array<std::string_view, 24> &values) {
   std::string out = "{";
   for (std::size_t i = 0; i < kKeys.size(); ++i) {
