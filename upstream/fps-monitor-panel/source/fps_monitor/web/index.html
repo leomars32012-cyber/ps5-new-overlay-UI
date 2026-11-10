@@ -515,7 +515,8 @@ fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
     { key: 'soc_power', label: 'SoC power', visible: 'show_soc_power' }
   ];
   const ORDER_KEYS = ORDER_METRICS.map((m) => m.key);
-  const ORDER_LABELS = Object.fromEntries(ORDER_METRICS.map((m) => [m.key, m]));
+  const ORDER_LABELS = {};
+  ORDER_METRICS.forEach((m) => { ORDER_LABELS[m.key] = m; });
   const orderCard = document.createElement('section');
   orderCard.className = 'card group';
   orderCard.innerHTML = '<h3>Metric order</h3><div class="metric-order">' +
