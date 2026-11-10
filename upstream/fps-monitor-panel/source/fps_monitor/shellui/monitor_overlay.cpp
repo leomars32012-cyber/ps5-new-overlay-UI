@@ -181,6 +181,16 @@ namespace scene = onion::overlay::scene;
 static_assert(scene::kSystemMetricCount ==
               onion::kOverlaySystemMetricCount,
               "settings and scene system metric IDs must stay aligned");
+static_assert(scene::kSystemCpu == onion::kOverlaySystemMetricCpu &&
+              scene::kSystemGpu == onion::kOverlaySystemMetricGpu &&
+              scene::kSystemMemory == onion::kOverlaySystemMetricMemory &&
+              scene::kSystemFan == onion::kOverlaySystemMetricFan &&
+              scene::kSystemIp == onion::kOverlaySystemMetricIp &&
+              scene::kSystemCpuClock == onion::kOverlaySystemMetricCpuClock &&
+              scene::kSystemGpuClock == onion::kOverlaySystemMetricGpuClock &&
+              scene::kSystemSsdTemp == onion::kOverlaySystemMetricSsdTemp &&
+              scene::kSystemSocPower == onion::kOverlaySystemMetricSocPower,
+              "settings and scene metric IDs must match");
 
 /* Latest numeric readings and the frame-time history the scene draws. */
 scene::Readings g_readings;
