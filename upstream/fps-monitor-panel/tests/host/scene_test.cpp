@@ -81,6 +81,11 @@ static Fixture make(State st) {
   s.ram_valid = true;
   s.ram_used_mb = 9830;
   s.ram_total_mb = 12800;
+  s.vram_valid = true;
+  s.vram_used_mb = 4096;
+  s.vram_total_mb = 8192;
+  s.fan_valid = true;
+  s.fan_duty_pct = 35;
   if (st == State::NoGame)
     return f;
 
@@ -314,6 +319,17 @@ static void check_scene(Detail d, Theme t, State st, BarEdge edge,
   CHECK((wm != nullptr) == panel, ctx + " watermark presence");
   if (wm)
     CHECK(wm->text == kWatermarkText, ctx + " watermark text");
+
+  /* Added telemetry must be visible in panel/full without replacing
+   * upstream CPU, GPU temperature/power, or RAM values. */
+  if (panel) {
+    const Text *gpu_detail = find_text(s, "id_osc_gpu_t");
+    CHECK(gpu_detail && gpu_detail->text.find("F35%") != std::string::npos,
+          ctx + " fan duty displayed");
+    const Text *mem_detail = find_text(s, "id_osc_mem_u");
+    CHECK(mem_detail && mem_detail->text.find("V 4.0GB") != std::string::npos,
+          ctx + " VRAM usage displayed");
+  }
 
   /* Classic keeps today's colours. */
   if (t == Theme::Classic && panel) {
