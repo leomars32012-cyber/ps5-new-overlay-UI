@@ -1,34 +1,36 @@
-name: Build and Release PS5 Overlay
+name: Build and Release FPS Monitor
 
 on:
   push:
     branches:
       - main
       - master
+      - refactor/reference-monitor-integration
     tags:
       - 'v*'
   pull_request:
     branches:
       - main
       - master
+      - refactor/reference-monitor-integration
   workflow_dispatch:
     inputs:
       create_release:
-        description: 'Publish a GitHub Release'
+        description: Publish a GitHub Release after a successful build
         required: true
         type: boolean
-        default: true
+        default: false
       release_version:
-        description: 'Release Tag/Version (e.g. v1.0.0)'
+        description: Release tag/version (for example v1.1.0)
         required: false
-        default: 'v1.0.0'
+        default: v1.1.0
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
-    name: Build PS5 Overlay ELF
+    name: Test and build upstream-based PS5 payload
     runs-on: ubuntu-24.04
 
     steps:
@@ -37,158 +39,111 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install build tools and compiler
+      - name: Install host and build tools
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            git wget unzip cmake ninja-build make \
-            clang-18 lld-18 llvm-18 llvm-18-dev \
-            python3
-
-          # Ensure LLVM toolchain binaries and symlinks are set
+            build-essential git wget unzip cmake ninja-build make \
+            clang-18 lld-18 llvm-18 llvm-18-dev python3
           sudo ln -sf /usr/bin/llvm-config-18 /usr/bin/llvm-config
           sudo ln -sf /usr/bin/clang-18 /usr/bin/clang
           sudo ln -sf /usr/bin/clang++-18 /usr/bin/clang++
           sudo ln -sf /usr/bin/ld.lld-18 /usr/bin/ld.lld
 
-      - name: Download and install PS5 Payload SDK
+      - name: Run upstream host tests
+        run: bash upstream/fps-monitor-panel/scripts/test.sh
+
+      - name: Install PS5 Payload SDK
         run: |
-          echo "Downloading latest PS5 Payload SDK v0.43..."
           wget -q https://github.com/ps5-payload-dev/sdk/releases/download/v0.43/ps5-payload-sdk.zip -O /tmp/ps5-payload-sdk.zip
-          sudo rm -rf /opt/ps5-payload-sdk
           sudo unzip -q /tmp/ps5-payload-sdk.zip -d /opt
           sudo chmod -R 755 /opt/ps5-payload-sdk
-          echo "PS5_PAYLOAD_SDK=/opt/ps5-payload-sdk" >> $GITHUB_ENV
-          echo "LLVM_CONFIG=/usr/bin/llvm-config-18" >> $GITHUB_ENV
-          echo "/opt/ps5-payload-sdk/bin" >> $GITHUB_PATH
           test -x /opt/ps5-payload-sdk/bin/prospero-cmake
           test -x /opt/ps5-payload-sdk/bin/prospero-clang
+          test -f /opt/ps5-payload-sdk/target/lib/libc++.a
 
-      - name: Build single ps5_overlay.elf
+      - name: Build FPS Monitor payload
+        env:
+          PS5_PAYLOAD_SDK: /opt/ps5-payload-sdk
+          LLVM_CONFIG: /usr/bin/llvm-config-18
         run: |
-          export PS5_PAYLOAD_SDK=/opt/ps5-payload-sdk
-          export LLVM_CONFIG=/usr/bin/llvm-config-18
           export PATH="/opt/ps5-payload-sdk/bin:/usr/lib/llvm-18/bin:${PATH}"
+          bash upstream/fps-monitor-panel/scripts/build.sh --release --jobs "$(nproc)"
 
-          mkdir -p build
-          cd build
-          prospero-cmake .. -DCMAKE_BUILD_TYPE=Release
-          cmake --build . --target ps5_overlay_shellui --verbose -j$(nproc)
-
-          # Embed the newly compiled shellui ELF into embedded_shellui.c
-          python3 ../tools/bin2c.py ps5_overlay_shellui.elf ../src/embedded_shellui.c g_overlay_shellui_elf
-
-          # Build the main overlay ELF with the embedded payload
-          cmake --build . --target ps5_overlay --verbose -j$(nproc)
-          cd ..
-
+      - name: Prepare build artifacts
+        run: |
           mkdir -p dist
-          cp build/ps5_overlay.elf dist/ps5_overlay.elf
-
+          cp upstream/fps-monitor-panel/build/bin/fps-monitor.elf dist/fps-monitor.elf
+          cp upstream/fps-monitor-panel/config.ini.example dist/config.ini.example
           cd dist
-          sha256sum ps5_overlay.elf > SHA256SUMS.txt
-          echo "=== SHA256 Checksums ==="
+          sha256sum fps-monitor.elf > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ps5-overlay-build
+          name: fps-monitor-ps5-build
           path: |
-            dist/ps5_overlay.elf
+            dist/fps-monitor.elf
             dist/SHA256SUMS.txt
-          if-no-files-found: warn
+            dist/config.ini.example
+          if-no-files-found: error
 
   release:
     name: Publish GitHub Release
     needs: build
     runs-on: ubuntu-24.04
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.create_release == true)
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.create_release == true)
+    permissions:
+      contents: write
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: ps5-overlay-build
+          name: fps-monitor-ps5-build
           path: dist
 
-      - name: Determine Release Tag
+      - name: Determine release tag
         id: vars
+        shell: bash
         run: |
-          if [ "${{ startsWith(github.ref, 'refs/tags/v') }}" = "true" ]; then
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             TAG_NAME="${GITHUB_REF#refs/tags/}"
-          elif [ "${{ github.event_name }}" = "push" ]; then
-            TAG_NAME="v1.0.16-beta.${{ github.run_number }}"
           else
             TAG_NAME="${{ inputs.release_version }}"
           fi
-          echo "tag=${TAG_NAME}" >> $GITHUB_OUTPUT
+          echo "tag=${TAG_NAME}" >> "${GITHUB_OUTPUT}"
 
-      - name: Create or Update GitHub Release
+      - name: Create or update GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.vars.outputs.tag }}
-          name: PS5 Hardware Overlay ${{ steps.vars.outputs.tag }}
+          name: FPS Monitor + PS5 Telemetry ${{ steps.vars.outputs.tag }}
           draft: false
           prerelease: true
           generate_release_notes: true
           body: |
-            ## 🎮 PS5 Hardware Overlay ${{ steps.vars.outputs.tag }}
-            
-            ### ✨ Beta 5 — Single Payload Architecture
-            - One ELF only: load ps5_overlay.elf through Payload Manager.
-            - The ShellUI HUD payload is compiled and embedded automatically into the main ELF.
-            - ps5_overlay_shellui.elf is an internal build artifact and is not required on the PS5.
-            - ps5_overlay_toggle.elf is no longer required.
-            - The persistent overlay state is stored in /data/ps5_overlay/config.ini.
-            - A dedicated PS5 UI settings app will later change this state without another ELF.
+            ## FPS Monitor Panel — upstream-based PS5 overlay
 
-            
-            Lightweight, standalone in-game hardware monitoring overlay for jailbroken PlayStation 5 (FW 1.xx - 10.xx+, kstuff active).
-            
-            ### ✨ What's New in this Beta
-            - **🧹 Streamlined Architecture (Pure In-Game Overlay)**:
-              - Completely removed embedded HTTP web server, sockets, and heavy HTML template assets.
-              - Minimal footprint, zero background network listening, and maximum stability.
-            - **⚡ Real-Time In-Game FPS Counter**:
-              - Hardware scanout flip delta sampling via Display Controller Engine (`/dev/dce`, `ioctl 0x80308217`).
-              - Native fallback support for OnionHEN seqlock sampler (`/system_tmp/fps_sample`).
-              - Dedicated **FPS** badge in gold/yellow (`#FFEB3B`) with live framerate (`60` / `120` / `--`).
-              - Configurable via `show_fps = true` in `/data/ps5_overlay/config.ini`.
-            - **🖥️ Native On-Screen In-Game HUD**:
-              - Automatically injected into `SceShellUI` via `ptrace` (with `kstuff` active).
-              - Rendered directly on top of gameplay via Mono PUI (`Scene.RootWidget`).
-              - Sleek translucent 2D bar at top of screen with color-coded metrics:
-                - **FPS** (Gold/Yellow `#FFEB3B`)
-                - **CPU** (Green `#66FF66`)
-                - **GPU** (Purple `#B366FF`)
-                - **RAM** (Orange `#FFB34D`)
-                - **FAN** (Cyan `#33E0FF`)
-            - **🔘 Live Overlay Toggle (Beta)**:
-              - The overlay can be enabled or disabled without rebuilding the payload.
-              - The toggle state is persisted in `/data/ps5_overlay/config.ini`.
-              - SceShellUI reapplies the visibility state continuously while the game HUD is active.
-            - **🔕 Zero Toast Spam**:
-              - Recurring notification popups completely disabled to protect your gameplay immersion.
-              - Only a single silent startup toast confirms the overlay is loaded.
-            
-            ### 🚀 Quick Start
-            1. Ensure **kstuff** is active on your PS5.
-            2. Send `ps5_overlay.elf` to your console via port **9020** or **9021**:
-               ```bash
-               nc -w 3 <ps5_ip> 9020 < ps5_overlay.elf
-               ```
-            3. A single notification appears confirming the overlay is active.
-            4. Launch any game — the hardware HUD bar appears at the top of the screen!
-            
-            ### 🔒 SHA-256 Checksums
-            Included in `SHA256SUMS.txt`.
+            This build uses rawalakshay/fps-monitor-panel as its overlay, ShellUI,
+            renderer, FPS/frame-time pipeline, settings and payload foundation.
+
+            This fork adds telemetry that the foundation did not expose:
+            - VRAM page-table usage, reported independently from system RAM.
+            - Fan duty percentage via the optional libkernel_sys symbol.
+
+            Existing upstream CPU per-core sampling, temperatures, GPU rail power,
+            FPS statistics, frame-time history and rendering are retained.
+
+            Hardware readings depend on available PS5 firmware symbols and APIs.
+            Validate telemetry on-console before treating readings as authoritative.
+            The build has not been certified on every firmware version.
+
+            Licensed under GPL-3.0; upstream copyright notices are preserved.
           files: |
-            dist/ps5_overlay.elf
+            dist/fps-monitor.elf
             dist/SHA256SUMS.txt
-            config.ini.example
+            dist/config.ini.example
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
