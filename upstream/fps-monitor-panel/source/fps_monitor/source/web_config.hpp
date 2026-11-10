@@ -14,7 +14,7 @@ namespace fpsmon::web {
 
 struct KeySpec {
   std::string_view name;
-  std::array<std::string_view, 4> values; // unused slots stay empty
+  std::array<std::string_view, 11> values; // unused slots stay empty
   bool quoted;                            // JSON string (else bool/number)
 };
 
@@ -49,7 +49,7 @@ inline constexpr std::array<KeySpec, 24> kKeys = {{
     {"align", {"left", "center", "right"}, true},
     {"font_size", {"small", "medium", "large"}, true},
     {"detail", {"minimal", "compact", "panel", "full"}, true},
-    {"opacity", {"0", "40", "65", "85"}, false},
+    {"opacity", {"0", "10", "20", "30", "40", "50", "60", "70", "80", "90", "100"}, false},
     {"theme", {"classic", "mono", "aurora", "vice"}, true},
     {"brand", {"true", "false"}, false},
     {"fps_pill", {"true", "false"}, false},
