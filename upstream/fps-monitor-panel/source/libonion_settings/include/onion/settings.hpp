@@ -285,6 +285,11 @@ inline constexpr int kOverlayThemeClassic = 0;
 inline constexpr int kOverlayThemeMono = 1;
 inline constexpr int kOverlayThemeAurora = 2;
 inline constexpr int kOverlayThemeVice = 3;
+inline constexpr int kOverlayThemeEmerald = 4;
+inline constexpr int kOverlayThemeSunset = 5;
+inline constexpr int kOverlayThemeArctic = 6;
+inline constexpr int kOverlayThemeCrimson = 7;
+inline constexpr int kOverlayThemeGold = 8;
 inline constexpr int kOverlayThemeDefault = kOverlayThemeClassic;
 
 inline const char *overlay_theme_name(int theme) {
@@ -295,6 +300,16 @@ inline const char *overlay_theme_name(int theme) {
     return "aurora";
   case kOverlayThemeVice:
     return "vice";
+  case kOverlayThemeEmerald:
+    return "emerald";
+  case kOverlayThemeSunset:
+    return "sunset";
+  case kOverlayThemeArctic:
+    return "arctic";
+  case kOverlayThemeCrimson:
+    return "crimson";
+  case kOverlayThemeGold:
+    return "gold";
   default:
     return "classic";
   }
@@ -507,7 +522,7 @@ struct Settings {
   int overlay_frame_graph_opacity = kOverlayOpacityDefault;
   /** Edge gap in pixels; one of kOverlayMarginOptions. */
   int overlay_margin = kOverlayMarginDefault;
-  /** kOverlayTheme*: classic, mono, aurora or vice. */
+  /** kOverlayTheme*: classic, mono, aurora, vice, emerald, sunset, arctic, crimson or gold. */
   int overlay_theme = kOverlayThemeDefault;
 
   // [shortcuts]
