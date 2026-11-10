@@ -173,6 +173,7 @@ constexpr int kSystemUpdateIntervalFrames = 30;
 constexpr int kClockIdRealtime = 4;
 constexpr int kVmSystem = 1;
 constexpr int kPageTableRam = 1;
+constexpr int kPageTableVram = 2;
 
 namespace scene = onion::overlay::scene;
 
@@ -516,6 +517,33 @@ void sample_system(unsigned int idle_tid[kCpuCores], int& current_bank) {
     s.ram_total_mb = total;
   }
 
+  /* VRAM page-table counters are kept independent from system RAM. */
+  used = 0;
+  free_mb = 0;
+  total = 0;
+  s.vram_valid =
+      Get_Page_Table_Stats(kVmSystem, kPageTableVram, &used, &free_mb, &total) &&
+      total > 0 && used >= 0 && used <= total;
+  if (s.vram_valid) {
+    s.vram_used_mb = used;
+    s.vram_total_mb = total;
+  }
+
+  /* Fan duty is an independent optional libkernel_sys symbol. */
+  static int fan_failing = 0;
+  uint16_t fan_duty = 0;
+  uint64_t fan_chassis = 0;
+  int fan_rc = -1;
+  s.fan_valid = sceKernelGetCurrentFanDuty &&
+                (fan_rc = sceKernelGetCurrentFanDuty(&fan_duty, &fan_chassis)) == 0 &&
+                fan_duty <= 1024;
+  log_source_state(s.fan_valid, fan_failing, "sceKernelGetCurrentFanDuty",
+                   fan_rc ? fan_rc : static_cast<int>(fan_duty));
+  if (s.fan_valid) {
+    s.fan_duty_pct =
+        static_cast<int>((static_cast<uint32_t>(fan_duty) * 100u + 512u) / 1024u);
+  }
+
   /* 0x70 bytes of u32: eight rails × (power mW, voltage mV, current mA);
    * rail 0 is the GPU core. Decoding follows ps5-hwinfo, so the raw words
    * are logged once for a check on the console. */
@@ -625,7 +653,9 @@ void OnRender_Hook(MonoObject* instance) {
     if (wants_system())
       sample_system(idle_thread_id, current_bank);
     else if (g_readings.sys.cpu_valid || g_readings.sys.ram_valid ||
-             g_readings.sys.cpu_temp_valid || g_readings.sys.soc_temp_valid)
+             g_readings.sys.vram_valid || g_readings.sys.fan_valid ||
+             g_readings.sys.power_valid || g_readings.sys.cpu_temp_valid ||
+             g_readings.sys.soc_temp_valid)
       g_readings.sys = scene::SystemReadings{};
     frames_until_system = kSystemUpdateIntervalFrames;
   } else {
