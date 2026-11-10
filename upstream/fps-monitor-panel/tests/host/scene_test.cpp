@@ -583,6 +583,58 @@ static int render(const std::string &dir) {
   return bad;
 }
 
+static bool appears_before(const Text *a, const Text *b) {
+  if (!a || !b)
+    return false;
+  return a->y < b->y - 0.01f ||
+         (near(a->y, b->y) && a->x < b->x);
+}
+
+static void check_metric_order() {
+  const Fixture f = make(State::Locked);
+  const std::array<int, kSystemMetricCount> reversed = {
+      kSystemSocPower, kSystemSsdTemp, kSystemGpuClock, kSystemCpuClock,
+      kSystemIp, kSystemFan, kSystemMemory, kSystemGpu, kSystemCpu};
+  const char *compact_ids[kSystemMetricCount] = {
+      "id_osc_scpu_l", "id_osc_sgpu_l", "id_osc_smem_l",
+      "id_osc_sfan_l", "id_osc_sip_l", "id_osc_scclk_l",
+      "id_osc_sgclk_l", "id_osc_sssd_l", "id_osc_ssocpwr_l"};
+  const char *panel_ids[kSystemMetricCount] = {
+      "id_osc_cpu_l", "id_osc_gpu_l", "id_osc_mem_l",
+      "id_osc_fan_l", "id_osc_ip_l", "id_osc_cclk_l",
+      "id_osc_gclk_l", "id_osc_ssd_l", "id_osc_socpwr_l"};
+
+  Options compact = options(Detail::Compact, Theme::Classic);
+  compact.system_order = reversed;
+  const Scene compact_scene = build_scene(compact, f.r, f.h);
+  for (int i = 0; i + 1 < kSystemMetricCount; ++i) {
+    const Text *a = find_text(compact_scene, compact_ids[reversed[i]]);
+    const Text *b = find_text(compact_scene, compact_ids[reversed[i + 1]]);
+    CHECK(a && b && a->x < b->x,
+          "compact system metrics follow configured order");
+  }
+
+  Options panel = options(Detail::Panel, Theme::Classic);
+  panel.system_order = reversed;
+  const Scene panel_scene = build_scene(panel, f.r, f.h);
+  for (int i = 0; i + 1 < kSystemMetricCount; ++i) {
+    const Text *a = find_text(panel_scene, panel_ids[reversed[i]]);
+    const Text *b = find_text(panel_scene, panel_ids[reversed[i + 1]]);
+    CHECK(appears_before(a, b),
+          "panel system metrics follow configured order");
+  }
+
+  std::array<int, kSystemMetricCount> malformed = {
+      kSystemSocPower, kSystemSocPower, -1, kSystemGpu, kSystemGpu,
+      kSystemCpuClock, 99, kSystemFan, kSystemFan};
+  normalize_system_metric_order(malformed);
+  std::set<int> unique(malformed.begin(), malformed.end());
+  CHECK(unique.size() == kSystemMetricCount,
+        "metric order normalization removes duplicates and invalid IDs");
+  CHECK(malformed[0] == kSystemSocPower && malformed[1] == kSystemGpu,
+        "metric order normalization preserves valid supplied order");
+}
+
 static void check_metric_visibility() {
   const Fixture f = make(State::Locked);
   Options o = options(Detail::Panel, Theme::Classic);
@@ -661,6 +713,8 @@ int main(int argc, char **argv) {
   check_helpers();
   g_combo = "metric visibility";
   check_metric_visibility();
+  g_combo = "metric ordering";
+  check_metric_order();
   const Detail details[] = {Detail::Minimal, Detail::Compact, Detail::Panel,
                             Detail::Full};
   const Theme themes[] = {Theme::Classic, Theme::Mono, Theme::Aurora,
