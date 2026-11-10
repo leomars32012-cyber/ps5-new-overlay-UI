@@ -52,6 +52,10 @@ show_cpu_clock=true
 show_gpu_clock=true
 show_ssd_temp=true
 show_soc_power=true
+# metrics_order controls the order of the nine independent system metrics.
+# Hidden metrics keep their saved position.
+# Available values: comma-separated cpu, gpu, memory, fan, ip, cpu_clock, gpu_clock, ssd_temp, soc_power
+metrics_order=cpu,gpu,memory,fan,ip,cpu_clock,gpu_clock,ssd_temp,soc_power
 # frame_graph shows the 7.5 s frame-time graph centred along the bottom edge
 # (the top edge when edge=bottom).
 # Available values: true, false
