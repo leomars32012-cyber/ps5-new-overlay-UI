@@ -86,6 +86,8 @@ static Fixture make(State st) {
   s.vram_total_mb = 8192;
   s.fan_valid = true;
   s.fan_duty_pct = 35;
+  s.ip_valid = true;
+  s.ip_address = "192.168.2.210";
   if (st == State::NoGame)
     return f;
 
@@ -572,8 +574,43 @@ static int render(const std::string &dir) {
   return bad;
 }
 
+static void check_metric_visibility() {
+  const Fixture f = make(State::Locked);
+  Options o = options(Detail::Panel, Theme::Classic);
+  o.frame_graph = false;
+  o.show_system = true;
+  o.show_fps = false;
+  o.show_cpu = false;
+  o.show_gpu = true;
+  o.show_memory = false;
+  o.show_ip_address = true;
+  o.show_fan_duty = true;
+  const Scene s = build_scene(o, f.r, f.h);
+  CHECK(find_text(s, "id_osc_fps_v") == nullptr, "FPS hidden");
+  CHECK(find_text(s, "id_osc_cpu_l") == nullptr, "CPU hidden");
+  CHECK(find_text(s, "id_osc_gpu_l") != nullptr, "GPU visible");
+  CHECK(find_text(s, "id_osc_mem_l") == nullptr, "memory hidden");
+  CHECK(find_text(s, "id_osc_fan_l") != nullptr, "fan has its own heading");
+  CHECK(find_text(s, "id_osc_fan_v") != nullptr, "fan has its own value");
+  CHECK(find_text(s, "id_osc_ip_l") != nullptr, "IP has its own heading");
+  CHECK(find_text(s, "id_osc_ip_v") != nullptr, "IP has its own value");
+  const Text *gpu = find_text(s, "id_osc_gpu_t");
+  CHECK(gpu && gpu->text == "74 W", "GPU detail contains power only");
+  const Text *fan = find_text(s, "id_osc_fan_v");
+  CHECK(fan && fan->text == "35%", "fan value is independently readable");
+
+  o.show_system = false;
+  const Scene master_off = build_scene(o, f.r, f.h);
+  CHECK(find_text(master_off, "id_osc_fan_l") == nullptr,
+        "system master hides fan");
+  CHECK(find_text(master_off, "id_osc_ip_l") == nullptr,
+        "system master hides IP");
+}
+
 int main(int argc, char **argv) {
   check_helpers();
+  g_combo = "metric visibility";
+  check_metric_visibility();
   const Detail details[] = {Detail::Minimal, Detail::Compact, Detail::Panel,
                             Detail::Full};
   const Theme themes[] = {Theme::Classic, Theme::Mono, Theme::Aurora,
