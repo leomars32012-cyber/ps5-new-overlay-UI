@@ -310,7 +310,7 @@ void apply_text(MonoObject *layer, const Text &t) {
   Widget *w = it != g_widgets.end() ? &it->second : create_text(layer, t);
   if (!w)
     return;
-  w->seen = true;
+  w->seen_generation = g_scene_generation;
   MonoClass *lbl = label_class();
   if (w->w != t.w) {
 #if defined(PS5_OVERLAY_PERF_DIAGNOSTICS)
