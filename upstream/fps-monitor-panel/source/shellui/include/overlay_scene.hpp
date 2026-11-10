@@ -1430,25 +1430,33 @@ inline float system_block(Builder &b, const Metrics &m, float x0, float iw,
     y = by + m.sys_bar_h;
   }
 
-  /* Hardware detail metrics get their own row so the main CPU/GPU/MEM
-   * columns and the existing fan/IP row never become cramped. */
+  /* Hardware detail metrics use a two-column grid. This keeps clock
+   * strings readable even on narrow 288 px layouts. */
   if (detail_count > 0) {
     if (primary_count > 0 || secondary_count > 0)
       y += m.section_gap;
-    const float gap = detail_count > 1 ? m.sys_col_gap : 0.0f;
-    const float cw = std::floor((iw - gap * (detail_count - 1)) /
-                                static_cast<float>(detail_count));
-    const float hy = y, vy = y + m.caption_h;
-    float x = x0;
+    const int detail_columns = detail_count > 1 ? 2 : 1;
+    const int detail_rows = (detail_count + detail_columns - 1) / detail_columns;
+    const float gap = detail_columns > 1 ? m.sys_col_gap : 0.0f;
+    const float cw = std::floor((iw - gap * (detail_columns - 1)) /
+                                static_cast<float>(detail_columns));
+    const float row_y = y;
+    const float row_stride = m.caption_h + m.sys_val_h + m.section_gap;
+    int detail_index = 0;
     auto detail_metric = [&](const char *id, const char *label,
                              const std::string &value, Rgba color) {
+      const int row = detail_index / detail_columns;
+      const int col = detail_index % detail_columns;
+      const float hy = row_y + row * row_stride;
+      const float vy = hy + m.caption_h;
+      const float x = x0 + col * (cw + gap);
       char label_id[48], value_id[48];
       std::snprintf(label_id, sizeof(label_id), "id_osc_%s_l", id);
       std::snprintf(value_id, sizeof(value_id), "id_osc_%s_v", id);
       heading(label_id, x, label, hy);
       b.text(value_id, x, cw, vy, m.sys_val_h, value, color, m.stat_pt,
              kWeightValue, TextAlign::Left, m.stat_pt);
-      x += cw + gap;
+      ++detail_index;
     };
     if (cpu_clock)
       detail_metric("cclk", "CPU CLK",
@@ -1466,7 +1474,8 @@ inline float system_block(Builder &b, const Metrics &m, float x0, float iw,
       detail_metric("socpwr", "SOC POWER",
                     s.soc_power_valid ? fmt_watts(s.soc_power_w) : kDash,
                     kText);
-    y = vy + m.sys_val_h;
+    y = row_y + detail_rows * (m.caption_h + m.sys_val_h) +
+        (detail_rows - 1) * m.section_gap;
   }
   return y;
 }

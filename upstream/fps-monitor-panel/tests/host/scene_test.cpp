@@ -613,7 +613,7 @@ static void check_metric_visibility() {
         "CPU clock is independently rendered");
   CHECK(find_text(s, "id_osc_gclk_v") && find_text(s, "id_osc_gclk_v")->text == "2200 MHz",
         "GPU GFXCLK is independently rendered");
-  CHECK(find_text(s, "id_osc_ssd_v") && find_text(s, "id_osc_ssd_v")->text == "53°C",
+  CHECK(find_text(s, "id_osc_ssd_v") && find_text(s, "id_osc_ssd_v")->text == "53°",
         "M.2 SSD temperature is independently rendered");
   CHECK(find_text(s, "id_osc_socpwr_v") && find_text(s, "id_osc_socpwr_v")->text == "128 W",
         "summed SoC rail power is independently rendered");
