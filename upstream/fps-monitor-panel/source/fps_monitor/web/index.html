@@ -564,15 +564,15 @@ fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
       const label = document.createElement('span');
       label.className = 'metric-order-label';
       label.textContent = metric.label;
-      const key = document.createElement('span');
-      key.className = 'key';
-      key.textContent = 'overlay.' + metric.visible;
+      const keyLabel = document.createElement('span');
+      keyLabel.className = 'key';
+      keyLabel.textContent = 'overlay.' + metric.visible;
       const state = document.createElement('span');
       state.className = 'metric-order-state';
       state.textContent = draft[metric.visible] ? 'Visible' : 'Hidden';
       state.classList.toggle('is-visible', !!draft[metric.visible]);
       name.appendChild(label);
-      name.appendChild(key);
+      name.appendChild(keyLabel);
       name.appendChild(state);
 
       const toggle = document.createElement('button');
