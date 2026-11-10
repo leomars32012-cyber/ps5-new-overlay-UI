@@ -21,6 +21,12 @@ set(CMAKE_CXX_FLAGS_RELEASE "-Os -DNDEBUG")
 # --- monitor_shellui.elf: injected into SceShellUI, draws the overlay only ---
 add_executable(fps_monitor_shellui)
 set_target_properties(fps_monitor_shellui PROPERTIES OUTPUT_NAME "monitor_shellui.elf")
+# PS5 resolves system .sprx imports through its loader. Never embed CI/build
+# machine directories in the deployable ELF's dynamic search path.
+set_target_properties(fps_monitor_shellui PROPERTIES
+	SKIP_BUILD_RPATH TRUE
+	BUILD_RPATH ""
+	INSTALL_RPATH "")
 target_link_options(fps_monitor_shellui PRIVATE "-Wl,--gc-sections" "-Wl,--icf=safe")
 target_sources(fps_monitor_shellui PRIVATE
 	"${D_CWD}/shellui/main.cpp"
@@ -59,6 +65,10 @@ onion_strip_debug(fps_monitor_shellui)
 set(_monitor_shellui_elf "${FPSMON_OUT_BIN}/monitor_shellui.elf")
 add_executable(fps_monitor)
 set_target_properties(fps_monitor PROPERTIES OUTPUT_NAME "fps-monitor.elf")
+set_target_properties(fps_monitor PROPERTIES
+	SKIP_BUILD_RPATH TRUE
+	BUILD_RPATH ""
+	INSTALL_RPATH "")
 target_link_options(fps_monitor PRIVATE "-Wl,--gc-sections" "-Wl,--icf=safe")
 target_sources(fps_monitor PRIVATE
 	"${D_CWD}/source/main.cpp"
