@@ -178,6 +178,9 @@ constexpr int kPageTableRam = 1;
 constexpr int kPageTableVram = 2;
 
 namespace scene = onion::overlay::scene;
+static_assert(scene::kSystemMetricCount ==
+              onion::kOverlaySystemMetricCount,
+              "settings and scene system metric IDs must stay aligned");
 
 /* Latest numeric readings and the frame-time history the scene draws. */
 scene::Readings g_readings;
@@ -672,6 +675,7 @@ void scene_render() {
   o.show_gpu_clock = g_settings.overlay_gpu_clock;
   o.show_ssd_temp = g_settings.overlay_ssd_temp;
   o.show_soc_power = g_settings.overlay_soc_power;
+  o.system_order = g_settings.overlay_metrics_order;
   o.frame_graph = g_settings.overlay_frame_graph;
   o.graph_opacity = g_settings.overlay_frame_graph_opacity;
   /* kOverlayTheme* values follow the scene::Theme order. */
