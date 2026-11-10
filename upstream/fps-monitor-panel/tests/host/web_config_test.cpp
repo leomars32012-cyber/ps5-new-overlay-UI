@@ -28,9 +28,6 @@ int main() {
   assert(find_key("show_ip_address"));
   assert(valid_value(*find_key("show_fan_duty"), "true"));
   assert(!valid_value(*find_key("show_fan_duty"), "yes"));
-  assert(parse_updates("show_cpu=false&show_fan_duty=true", u).empty());
-  assert(u.size() == 2 && u[0].first == "show_cpu" &&
-         u[1].first == "show_fan_duty");
 
   /* form decode */
   std::string s;
@@ -40,6 +37,9 @@ int main() {
   assert(!form_decode("%zz", s));
 
   Updates u;
+  assert(parse_updates("show_cpu=false&show_fan_duty=true", u).empty());
+  assert(u.size() == 2 && u[0].first == "show_cpu" &&
+         u[1].first == "show_fan_duty");
   assert(parse_updates("enabled=false&theme=vice", u).empty());
   assert(u.size() == 2 && u[0].first == "enabled" && u[1].second == "vice");
   assert(parse_updates("th%65me=mono", u).empty() && u[0].first == "theme");
