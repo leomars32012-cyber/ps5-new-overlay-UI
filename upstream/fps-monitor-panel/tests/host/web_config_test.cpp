@@ -23,6 +23,12 @@ int main() {
       assert(v.empty() || valid_value(k, v));
   assert(valid_value(*find_key("margin"), "20"));
   assert(!valid_value(*find_key("margin"), "15"));
+  assert(valid_value(*find_key("opacity"), "0"));
+  assert(valid_value(*find_key("opacity"), "10"));
+  assert(valid_value(*find_key("opacity"), "100"));
+  assert(!valid_value(*find_key("opacity"), "5"));
+  assert(!valid_value(*find_key("opacity"), "40.0"));
+  assert(!valid_value(*find_key("frame_graph_opacity"), "10"));
   assert(!valid_value(*find_key("enabled"), ""));
   assert(!valid_value(*find_key("theme"), "Vice"));
   assert(find_key("show_ip_address"));
