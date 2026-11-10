@@ -32,6 +32,13 @@ int main() {
   assert(valid_value(*find_key("show_gpu_clock"), "false"));
   assert(valid_value(*find_key("show_ssd_temp"), "true"));
   assert(valid_value(*find_key("show_soc_power"), "true"));
+  assert(valid_value(*find_key("metrics_order"),
+                     "cpu,gpu,memory,fan,ip,cpu_clock,gpu_clock,ssd_temp,soc_power"));
+  assert(!valid_value(*find_key("metrics_order"), "cpu,gpu"));
+  assert(!valid_value(*find_key("metrics_order"),
+                      "cpu,gpu,memory,fan,ip,cpu_clock,gpu_clock,ssd_temp,ssd_temp"));
+  assert(!valid_value(*find_key("metrics_order"),
+                      "cpu,gpu,memory,fan,ip,cpu_clock,gpu_clock,ssd_temp,soc_power,"));
 
   /* form decode */
   std::string s;
@@ -132,14 +139,16 @@ int main() {
   assert(config_json({"true", "top", "left", "medium", "panel", "85",
                       "classic", "false", "false", "true", "true", "85",
                       "20", "true", "true", "true", "true", "false",
-                      "false", "true", "true", "true", "true"}) ==
+                      "false", "true", "true", "true", "true",
+                      "cpu,gpu,memory,fan,ip,cpu_clock,gpu_clock,ssd_temp,soc_power"}) ==
          "{\"enabled\":true,\"edge\":\"top\",\"align\":\"left\","
          "\"font_size\":\"medium\",\"detail\":\"panel\",\"opacity\":85,"
          "\"theme\":\"classic\",\"brand\":false,\"fps_pill\":false,"
          "\"system\":true,\"frame_graph\":true,\"frame_graph_opacity\":85,"
          "\"margin\":20,\"show_fps\":true,\"show_cpu\":true,"
          "\"show_gpu\":true,\"show_memory\":true,"
-         "\"show_ip_address\":false,\"show_fan_duty\":false,\"show_cpu_clock\":true,\"show_gpu_clock\":true,\"show_ssd_temp\":true,\"show_soc_power\":true}");
+         "\"show_ip_address\":false,\"show_fan_duty\":false,\"show_cpu_clock\":true,\"show_gpu_clock\":true,\"show_ssd_temp\":true,\"show_soc_power\":true,"
+                         "\"metrics_order\":\"cpu,gpu,memory,fan,ip,cpu_clock,gpu_clock,ssd_temp,soc_power\"}");
 
   std::puts("web_config_test: ok");
   return 0;
