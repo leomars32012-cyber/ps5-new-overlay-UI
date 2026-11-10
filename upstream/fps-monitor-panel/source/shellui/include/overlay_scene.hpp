@@ -1258,9 +1258,9 @@ inline void add_frame_graph(Scene &main, const Options &opt, const Readings &r,
 /* ------------------------------------------------------------------ */
 
 /**
- * Three equal columns under the panel charts, each a heading row, a value
- * row (big value + small value on one baseline) and a 3 px bar. Starts
- * with a hairline rule. Returns the y just under the bars.
+ * Visible CPU / GPU / MEMORY columns expand to fill the row. Optional FAN
+ * and IP metrics occupy a separate secondary row, keeping fan duty readable
+ * instead of squeezing it into the GPU detail. Starts with a hairline rule.
  */
 inline float system_block(Builder &b, const Metrics &m, float x0, float iw,
                           float y, const SystemReadings &s,
