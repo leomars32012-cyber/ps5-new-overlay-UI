@@ -646,6 +646,11 @@ struct SystemReadings {
   bool ram_valid = false;
   int ram_used_mb = 0;
   int ram_total_mb = 0;
+  bool vram_valid = false;
+  int vram_used_mb = 0;
+  int vram_total_mb = 0;
+  bool fan_valid = false;
+  int fan_duty_pct = 0; /* 0..100% of the reported 1024-step duty */
 };
 
 /** Latest numbers; fps_valid = false shows "no game". */
@@ -850,7 +855,11 @@ inline Readings sanitized(const Readings &in) {
       core = 0.0f;
   s.cpu_valid = s.cpu_valid && ok(s.cpu_pct);
   s.power_valid = s.power_valid && ok(s.gpu_power_w) && s.gpu_power_w >= 0.0f;
-  s.ram_valid = s.ram_valid && s.ram_total_mb > 0 && s.ram_used_mb >= 0;
+  s.ram_valid = s.ram_valid && s.ram_total_mb > 0 && s.ram_used_mb >= 0 &&
+                s.ram_used_mb <= s.ram_total_mb;
+  s.vram_valid = s.vram_valid && s.vram_total_mb > 0 && s.vram_used_mb >= 0 &&
+                 s.vram_used_mb <= s.vram_total_mb;
+  s.fan_valid = s.fan_valid && s.fan_duty_pct >= 0 && s.fan_duty_pct <= 100;
   return r;
 }
 
