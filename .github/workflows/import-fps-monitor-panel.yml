@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - refactor/reference-monitor-integration
-    paths:
-      - .github/workflows/import-fps-monitor-panel.yml
   workflow_dispatch:
 
 permissions:
