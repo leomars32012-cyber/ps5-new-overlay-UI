@@ -18,8 +18,8 @@ struct KeySpec {
   bool quoted;                            // JSON string (else bool/number)
 };
 
-/* The 13 [overlay] keys the web app edits, in JSON order. */
-inline constexpr std::array<KeySpec, 13> kKeys = {{
+/* The 19 [overlay] keys the web app edits, in JSON order. */
+inline constexpr std::array<KeySpec, 19> kKeys = {{
     {"enabled", {"true", "false"}, false},
     {"edge", {"top", "bottom"}, true},
     {"align", {"left", "center", "right"}, true},
@@ -33,6 +33,12 @@ inline constexpr std::array<KeySpec, 13> kKeys = {{
     {"frame_graph", {"true", "false"}, false},
     {"frame_graph_opacity", {"0", "40", "65", "85"}, false},
     {"margin", {"0", "5", "10", "20"}, false},
+    {"show_fps", {"true", "false"}, false},
+    {"show_cpu", {"true", "false"}, false},
+    {"show_gpu", {"true", "false"}, false},
+    {"show_memory", {"true", "false"}, false},
+    {"show_ip_address", {"true", "false"}, false},
+    {"show_fan_duty", {"true", "false"}, false},
 }};
 
 inline const KeySpec *find_key(std::string_view name) {
@@ -283,8 +289,8 @@ inline std::string apply_updates(std::string_view ini, const Updates &updates) {
   return out;
 }
 
-/* {"enabled":true,...} from the 13 values in kKeys order. */
-inline std::string config_json(const std::array<std::string_view, 13> &values) {
+/* {"enabled":true,...} from the 19 values in kKeys order. */
+inline std::string config_json(const std::array<std::string_view, 19> &values) {
   std::string out = "{";
   for (std::size_t i = 0; i < kKeys.size(); ++i) {
     out += (i ? ",\"" : "\"") + std::string(kKeys[i].name) + "\":";
