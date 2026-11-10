@@ -668,6 +668,41 @@ serialize_overlay_order(const std::array<int, kOverlayMetricCount> &order) {
   return out;
 }
 
+int parse_overlay_system_metric_token(const char *s) {
+  for (int metric = 0; metric < kOverlaySystemMetricCount; ++metric) {
+    if (streq_ci(s, overlay_system_metric_name(metric)))
+      return metric;
+  }
+  return -1;
+}
+
+void parse_overlay_system_order(
+    const char *s,
+    std::array<int, kOverlaySystemMetricCount> *out) {
+  if (!s || !out)
+    return;
+  std::array<int, kOverlaySystemMetricCount> parsed{};
+  bool seen[kOverlaySystemMetricCount] = {};
+  int n = 0;
+  const std::string input(s);
+  std::size_t start = 0;
+  while (start <= input.size()) {
+    const std::size_t comma = input.find(',', start);
+    const std::string token = trim_copy(input.substr(
+        start, comma == std::string::npos ? std::string::npos : comma - start));
+    const int metric = parse_overlay_system_metric_token(token.c_str());
+    if (metric >= 0 && !seen[metric] && n < kOverlaySystemMetricCount) {
+      seen[metric] = true;
+      parsed[n++] = metric;
+    }
+    if (comma == std::string::npos)
+      break;
+    start = comma + 1;
+  }
+  overlay_normalize_system_order(parsed);
+  *out = parsed;
+}
+
 int parse_cheats_shortcut(const char *s, int def) {
   if (streq_ci(s, "off")) {
     return 0;
@@ -829,6 +864,9 @@ bool apply_parser(IniParser *parser, Settings *out) {
       ini_get(parser, "overlay.font_size"), out->overlay_font_size);
   if (const char *order = ini_get(parser, "overlay.order")) {
     parse_overlay_order(order, &out->overlay_order);
+  }
+  if (const char *order = ini_get(parser, "overlay.metrics_order")) {
+    parse_overlay_system_order(order, &out->overlay_metrics_order);
   }
   out->overlay_detail = parse_overlay_detail(ini_get(parser, "overlay.detail"),
                                              out->overlay_detail);
@@ -1069,6 +1107,9 @@ std::string settings_serialize(const Settings &in) {
   b += "# order is the left-to-right metric sequence on the bar.\n";
   b += "# Available values: comma-separated fps, cpu, gpu, memory, ip, fan\n";
   b += "order=" + serialize_overlay_order(in.overlay_order) + "\n";
+  b += "# metrics_order controls the standalone monitor system-metric sequence.\n";
+  b += "# Available values: comma-separated cpu, gpu, memory, fan, ip, cpu_clock, gpu_clock, ssd_temp, soc_power\n";
+  b += "metrics_order=" + overlay_system_order_name(in.overlay_metrics_order) + "\n";
   b += "# The keys below are read by the standalone fps-monitor only.\n";
   b += "# detail picks how much the monitor shows: an FPS pill, one compact\n";
   b += "# line, a corner panel, or the panel with per-core CPU.\n";
