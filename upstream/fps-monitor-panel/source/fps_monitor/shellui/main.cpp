@@ -126,9 +126,6 @@ void load_settings() {
   /* false = defaults kept; a rejected file is warned about in settings.cpp. */
   (void)onion::settings_load(&s);
   onion::apply_log_settings(s);
-  s.overlay_fps = true;
-  s.overlay_ip = false;
-  s.overlay_fan = false;
   g_settings = s;
   apply_overlay_layout();
   /* mtime has 1 s resolution: a file written this second may change again
