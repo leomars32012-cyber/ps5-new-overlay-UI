@@ -133,7 +133,9 @@ int main() {
          "\"font_size\":\"medium\",\"detail\":\"panel\",\"opacity\":85,"
          "\"theme\":\"classic\",\"brand\":false,\"fps_pill\":false,"
          "\"system\":true,\"frame_graph\":true,\"frame_graph_opacity\":85,"
-         "\"margin\":20}");
+         "\"margin\":20,\"show_fps\":true,\"show_cpu\":true,"
+         "\"show_gpu\":true,\"show_memory\":true,"
+         "\"show_ip_address\":false,\"show_fan_duty\":false}");
 
   std::puts("web_config_test: ok");
   return 0;
