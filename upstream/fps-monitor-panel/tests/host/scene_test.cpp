@@ -233,7 +233,7 @@ static void check_scene(Detail d, Theme t, State st, BarEdge edge,
     CHECK(fps && fps->align == TextAlign::Left,
           ctx + " FPS value uses explicit centered-slot placement");
     if (fps) {
-      const Metrics m(o.font_pt);
+      const onion::overlay::scene::Metrics m(o.font_pt);
       float slot_x = 0.0f;
       float slot_width = 0.0f;
       if (d == Detail::Minimal) {
@@ -241,10 +241,10 @@ static void check_scene(Detail d, Theme t, State st, BarEdge edge,
         CHECK(dot != nullptr, ctx + " minimal FPS dot exists");
         if (dot)
           slot_x = dot->x + dot->w + std::round(8.0f * k);
-        slot_width = detail::slot_w({"888"}, m.pill_pt);
+        slot_width = onion::overlay::scene::detail::slot_w({"888"}, m.pill_pt);
       } else {
         slot_x = s.x + std::round(14.0f * k);
-        slot_width = detail::slot_w({"888"}, m.strip_pt);
+        slot_width = onion::overlay::scene::detail::slot_w({"888"}, m.strip_pt);
       }
       const float text_w =
           text_advance(fps->text.c_str(), static_cast<float>(fps->pt));
