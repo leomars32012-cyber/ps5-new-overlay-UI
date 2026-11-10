@@ -83,15 +83,16 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DPS5_PAYLOAD_SDK="${PS5_PAYLOAD_SDK}" \
             -DPS5_OVERLAY_PERF_DIAGNOSTICS=ON
-          cmake --build build-perf --target fps_monitor_shellui --verbose -j"$(nproc)"
+          cmake --build build-perf --target fps_monitor --verbose -j"$(nproc)"
 
       - name: Prepare build artifacts
         run: |
           mkdir -p dist
           cp build/bin/fps-monitor.elf dist/fps-monitor.elf
+          cp build-perf/bin/fps-monitor.elf dist/fps-monitor-perf.elf
           cp upstream/fps-monitor-panel/config.ini.example dist/config.ini.example
           cd dist
-          sha256sum fps-monitor.elf > SHA256SUMS.txt
+          sha256sum fps-monitor.elf fps-monitor-perf.elf > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - name: Upload build artifacts
@@ -100,6 +101,7 @@ jobs:
           name: fps-monitor-ps5-build
           path: |
             dist/fps-monitor.elf
+            dist/fps-monitor-perf.elf
             dist/SHA256SUMS.txt
             dist/config.ini.example
           if-no-files-found: error
