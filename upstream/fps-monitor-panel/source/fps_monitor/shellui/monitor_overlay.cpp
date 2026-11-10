@@ -10,6 +10,9 @@
 #include "external_symbols.hpp"
 #include "overlay_scene.hpp"
 #include "overlay_scene_renderer.hpp"
+#if defined(PS5_OVERLAY_PERF_DIAGNOSTICS)
+#include "overlay_perf_diagnostics.hpp"
+#endif
 #include <onion/fps_sample.h>
 #include <onion/net.h>
 #include <onion/settings.hpp>
@@ -691,7 +694,49 @@ void scene_render() {
   /* kOverlayTheme* values follow the scene::Theme order. */
   o.theme = static_cast<scene::Theme>(g_settings.overlay_theme);
   o.margin = static_cast<float>(g_settings.overlay_margin);
+#if defined(PS5_OVERLAY_PERF_DIAGNOSTICS)
+  const uint64_t build_start_ns = onion::overlay::perf::now_ns();
+  scene::Scene built_scene = scene::build_scene(o, r, g_history);
+  const uint64_t build_elapsed_ns =
+      onion::overlay::perf::now_ns() - build_start_ns;
+  onion::overlay::perf::record_scene_build(
+      build_elapsed_ns, built_scene.rects.size(), built_scene.texts.size());
+
+  const uint64_t apply_start_ns = onion::overlay::perf::now_ns();
+  overlay_scene_apply(built_scene);
+  const uint64_t apply_elapsed_ns =
+      onion::overlay::perf::now_ns() - apply_start_ns;
+  onion::overlay::perf::record_scene_apply(apply_elapsed_ns);
+
+  /* Aggregate for five seconds; never emit a log line per rendered scene. */
+  static uint64_t last_report_ns = 0;
+  const uint64_t report_now_ns = onion::overlay::perf::now_ns();
+  if (last_report_ns == 0)
+    last_report_ns = report_now_ns;
+  if (report_now_ns - last_report_ns >= 5000000000ull) {
+    const onion::overlay::perf::Stats stats =
+        onion::overlay::perf::take_interval();
+    const uint64_t scenes = stats.scene_count ? stats.scene_count : 1;
+    const uint64_t apply_count = stats.scene_count ? stats.scene_count : 1;
+    LOG_INFO(
+        "overlay perf/5s: scenes=%llu build_avg=%.3fms build_max=%.3fms "
+        "apply_avg=%.3fms apply_max=%.3fms rect_avg=%.1f text_avg=%.1f "
+        "created=%llu property_updates=%llu cache=%zu",
+        static_cast<unsigned long long>(stats.scene_count),
+        static_cast<double>(stats.scene_build_total_ns) / scenes / 1000000.0,
+        static_cast<double>(stats.scene_build_max_ns) / 1000000.0,
+        static_cast<double>(stats.scene_apply_total_ns) / apply_count / 1000000.0,
+        static_cast<double>(stats.scene_apply_max_ns) / 1000000.0,
+        static_cast<double>(stats.rect_total) / scenes,
+        static_cast<double>(stats.text_total) / scenes,
+        static_cast<unsigned long long>(stats.widget_creations),
+        static_cast<unsigned long long>(stats.property_updates),
+        stats.widget_cache_size);
+    last_report_ns = report_now_ns;
+  }
+#else
   overlay_scene_apply(scene::build_scene(o, r, g_history));
+#endif
 }
 
 } // namespace
