@@ -25,7 +25,12 @@ int main() {
   assert(!valid_value(*find_key("margin"), "15"));
   assert(!valid_value(*find_key("enabled"), ""));
   assert(!valid_value(*find_key("theme"), "Vice"));
-  assert(!find_key("show_ip_address"));
+  assert(find_key("show_ip_address"));
+  assert(valid_value(*find_key("show_fan_duty"), "true"));
+  assert(!valid_value(*find_key("show_fan_duty"), "yes"));
+  assert(parse_updates("show_cpu=false&show_fan_duty=true", u).empty());
+  assert(u.size() == 2 && u[0].first == "show_cpu" &&
+         u[1].first == "show_fan_duty");
 
   /* form decode */
   std::string s;
@@ -122,7 +127,8 @@ int main() {
   /* JSON */
   assert(config_json({"true", "top", "left", "medium", "panel", "85",
                       "classic", "false", "false", "true", "true", "85",
-                      "20"}) ==
+                      "20", "true", "true", "true", "true", "false",
+                      "false"}) ==
          "{\"enabled\":true,\"edge\":\"top\",\"align\":\"left\","
          "\"font_size\":\"medium\",\"detail\":\"panel\",\"opacity\":85,"
          "\"theme\":\"classic\",\"brand\":false,\"fps_pill\":false,"
