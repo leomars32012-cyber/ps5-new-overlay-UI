@@ -18,8 +18,32 @@ struct KeySpec {
   bool quoted;                            // JSON string (else bool/number)
 };
 
-/* The 23 [overlay] keys the web app edits, in JSON order. */
-inline constexpr std::array<KeySpec, 23> kKeys = {{
+/* The 24 [overlay] keys the web app edits, in JSON order. */
+inline constexpr std::array<std::string_view, 9> kSystemMetricNames = {
+    "cpu", "gpu", "memory", "fan", "ip", "cpu_clock", "gpu_clock",
+    "ssd_temp", "soc_power"};
+
+inline bool valid_system_order(std::string_view value) {
+  bool seen[kSystemMetricNames.size()] = {};
+  std::size_t count = 0;
+  while (true) {
+    const std::size_t comma = value.find(',');
+    const std::string_view token = value.substr(0, comma);
+    std::size_t metric = 0;
+    while (metric < kSystemMetricNames.size() &&
+           kSystemMetricNames[metric] != token)
+      ++metric;
+    if (metric == kSystemMetricNames.size() || seen[metric])
+      return false;
+    seen[metric] = true;
+    ++count;
+    if (comma == std::string_view::npos)
+      return count == kSystemMetricNames.size();
+    value.remove_prefix(comma + 1);
+  }
+}
+
+inline constexpr std::array<KeySpec, 24> kKeys = {{
     {"enabled", {"true", "false"}, false},
     {"edge", {"top", "bottom"}, true},
     {"align", {"left", "center", "right"}, true},
@@ -43,6 +67,7 @@ inline constexpr std::array<KeySpec, 23> kKeys = {{
     {"show_gpu_clock", {"true", "false"}, false},
     {"show_ssd_temp", {"true", "false"}, false},
     {"show_soc_power", {"true", "false"}, false},
+    {"metrics_order", {}, true},
 }};
 
 inline const KeySpec *find_key(std::string_view name) {
@@ -55,6 +80,8 @@ inline const KeySpec *find_key(std::string_view name) {
 inline bool valid_value(const KeySpec &k, std::string_view value) {
   if (value.empty())
     return false;
+  if (k.name == "metrics_order")
+    return valid_system_order(value);
   for (std::string_view v : k.values)
     if (v == value)
       return true;
@@ -294,7 +321,7 @@ inline std::string apply_updates(std::string_view ini, const Updates &updates) {
 }
 
 /* {"enabled":true,...} from the 23 values in kKeys order. */
-inline std::string config_json(const std::array<std::string_view, 23> &values) {
+inline std::string config_json(const std::array<std::string_view, 24> &values) {
   std::string out = "{";
   for (std::size_t i = 0; i < kKeys.size(); ++i) {
     out += (i ? ",\"" : "\"") + std::string(kKeys[i].name) + "\":";
