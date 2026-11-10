@@ -631,6 +631,7 @@ static void check_metric_visibility() {
 
   o.detail = Detail::Compact;
   o.show_fps = false;
+  o.show_memory = true;
   const Scene compact = build_scene(o, f.r, f.h);
   CHECK(find_text(compact, "id_osc_fps_v") == nullptr,
         "compact FPS hidden");
@@ -638,6 +639,9 @@ static void check_metric_visibility() {
         "compact fan has a dedicated cell");
   CHECK(find_text(compact, "id_osc_sip_v") != nullptr,
         "compact IP has a dedicated cell");
+  const Text *compact_memory = find_text(compact, "id_osc_smem_v");
+  CHECK(compact_memory && compact_memory->text == "9.6/4.0",
+        "compact memory cell displays RAM and VRAM usage");
 
   o.detail = Detail::Panel;
   o.show_system = false;

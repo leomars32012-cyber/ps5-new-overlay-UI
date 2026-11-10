@@ -1604,8 +1604,11 @@ inline Scene build_compact(const Options &opt, const Readings &r,
     }
     if (opt.show_memory) {
       next_metric();
-      cell("smem", "MEM", s.ram_valid ? fmt_gb(s.ram_used_mb) : kDash,
-           s.ram_valid ? kText : kText, {"999.9"}, "GB", kLabel, {"GB"});
+      const std::string ram = s.ram_valid ? fmt_gb(s.ram_used_mb) : std::string(kDash);
+      const std::string vram = s.vram_valid ? fmt_gb(s.vram_used_mb) : std::string(kDash);
+      const std::string memory_value = ram + "/" + vram;
+      cell("smem", "RAM/V", memory_value, kText, {"999.9/999.9"}, "GB",
+           kLabel, {"GB"});
     }
     if (opt.show_fan_duty) {
       next_metric();

@@ -83,8 +83,9 @@ bool Get_Page_Table_Stats(int vm, int type, int* Used, int* Free, int* Total)
     int _Total = 0, _Free = 0;
 
     static int failing = 0;
-    const bool ok = get_page_table_stats(vm, type, &_Total, &_Free) != -1;
-    log_source_state(ok, failing, "get_page_table_stats", ok ? 0 : errno);
+    const int rc = get_page_table_stats(vm, type, &_Total, &_Free);
+    const bool ok = rc == 0;
+    log_source_state(ok, failing, "get_page_table_stats", rc);
     if (!ok)
         return false;
 
