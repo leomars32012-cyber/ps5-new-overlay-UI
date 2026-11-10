@@ -50,7 +50,7 @@ constexpr Rgba hex(uint32_t rgb, float a = 1.0f) {
 constexpr Rgba with_alpha(Rgba c, float a) { return {c.r, c.g, c.b, a}; }
 
 /** overlay.theme; palettes from capture-fps-app. */
-enum class Theme : uint8_t { Classic, Mono, Aurora, Vice };
+enum class Theme : uint8_t { Classic, Mono, Aurora, Vice, Emerald, Sunset, Arctic, Crimson, Gold };
 /** Decoration drawn on every box: none, a bar down the left, or a two-tone
  *  bar along the top. */
 enum class Accent : uint8_t { None, Left, Top };
@@ -74,6 +74,21 @@ inline constexpr Palette palette(Theme t) {
   case Theme::Vice:
     return {0x150A24,      hex(0xFDF2F8), hex(0xE9D5FF), hex(0xC4B5FD),
             hex(0xFF4FA3), hex(0xFF8A3D), hex(0xFF3344), Accent::Top};
+  case Theme::Emerald:
+    return {0x071A16,      hex(0xE6FFF5), hex(0xA7F3D0), hex(0x86B8A5),
+            hex(0x34D399), hex(0xFBBF24), hex(0xFB7185), Accent::Left};
+  case Theme::Sunset:
+    return {0x1D1110,      hex(0xFFF1E8), hex(0xFBC4A4), hex(0xD6A58F),
+            hex(0xFB923C), hex(0xFACC15), hex(0xEF4444), Accent::Top};
+  case Theme::Arctic:
+    return {0x0B1724,      hex(0xEAF6FF), hex(0xB9E5FF), hex(0x9BB8CC),
+            hex(0x38BDF8), hex(0xFBBF24), hex(0xFB7185), Accent::Left};
+  case Theme::Crimson:
+    return {0x1A0B10,      hex(0xFFF1F2), hex(0xFDA4AF), hex(0xDDA4AC),
+            hex(0xFB7185), hex(0xFBBF24), hex(0xEF4444), Accent::Top};
+  case Theme::Gold:
+    return {0x17140B,      hex(0xFFF9E6), hex(0xFDE68A), hex(0xCDBE91),
+            hex(0xEAB308), hex(0xFB923C), hex(0xEF4444), Accent::Left};
   case Theme::Classic:
   default:
     return {0x0B0E13,      hex(0xEEF2F5), hex(0xC9D0D6), hex(0xA7B0B8),
