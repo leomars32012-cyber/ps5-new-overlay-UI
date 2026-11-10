@@ -701,6 +701,40 @@ struct Histories {
 
 enum class Detail : uint8_t { Minimal, Compact, Panel, Full };
 
+/* Stable IDs shared with onion::Settings::overlay_metrics_order. */
+inline constexpr int kSystemMetricCount = 9;
+inline constexpr int kSystemCpu = 0;
+inline constexpr int kSystemGpu = 1;
+inline constexpr int kSystemMemory = 2;
+inline constexpr int kSystemFan = 3;
+inline constexpr int kSystemIp = 4;
+inline constexpr int kSystemCpuClock = 5;
+inline constexpr int kSystemGpuClock = 6;
+inline constexpr int kSystemSsdTemp = 7;
+inline constexpr int kSystemSocPower = 8;
+inline constexpr std::array<int, kSystemMetricCount> kSystemMetricOrderDefault = {
+    kSystemCpu, kSystemGpu, kSystemMemory, kSystemFan, kSystemIp,
+    kSystemCpuClock, kSystemGpuClock, kSystemSsdTemp, kSystemSocPower};
+
+inline void normalize_system_metric_order(
+    std::array<int, kSystemMetricCount> &order) {
+  bool seen[kSystemMetricCount] = {};
+  std::array<int, kSystemMetricCount> normalized{};
+  int n = 0;
+  for (int metric : order) {
+    if (metric < 0 || metric >= kSystemMetricCount || seen[metric])
+      continue;
+    seen[metric] = true;
+    normalized[n++] = metric;
+  }
+  for (int metric = 0; metric < kSystemMetricCount; ++metric) {
+    if (seen[metric])
+      continue;
+    normalized[n++] = metric;
+  }
+  order = normalized;
+}
+
 struct Options {
   float screen_w = 0.0f;
   float screen_h = 0.0f;
@@ -729,6 +763,8 @@ struct Options {
   bool show_gpu_clock = true;
   bool show_ssd_temp = true;
   bool show_soc_power = true;
+  /** User-selected order for the independent system metrics. */
+  std::array<int, kSystemMetricCount> system_order = kSystemMetricOrderDefault;
   /** Frame-time graph box along the bottom edge (overlay.frame_graph). */
   bool frame_graph = true;
   /** The graph box's own background opacity (overlay.frame_graph_opacity). */
@@ -1282,27 +1318,34 @@ inline void add_frame_graph(Scene &main, const Options &opt, const Readings &r,
 inline float system_block(Builder &b, const Metrics &m, float x0, float iw,
                           float y, const SystemReadings &s,
                           const Options &opt) {
-  const bool cpu = opt.show_cpu;
-  const bool gpu = opt.show_gpu;
-  const bool memory = opt.show_memory;
-  const bool fan = opt.show_fan_duty;
-  const bool ip = opt.show_ip_address;
-  const bool cpu_clock = opt.show_cpu_clock;
-  const bool gpu_clock = opt.show_gpu_clock;
-  const bool ssd_temp = opt.show_ssd_temp;
-  const bool soc_power = opt.show_soc_power;
-  const int primary_count = static_cast<int>(cpu) + static_cast<int>(gpu) +
-                            static_cast<int>(memory);
-  const int detail_count = static_cast<int>(cpu_clock) + static_cast<int>(gpu_clock) +
-                           static_cast<int>(ssd_temp) + static_cast<int>(soc_power);
-  if (primary_count == 0 && !fan && !ip && detail_count == 0)
+  const bool visible[kSystemMetricCount] = {
+      opt.show_cpu,       opt.show_gpu,       opt.show_memory,
+      opt.show_fan_duty,  opt.show_ip_address, opt.show_cpu_clock,
+      opt.show_gpu_clock, opt.show_ssd_temp,  opt.show_soc_power};
+  std::array<int, kSystemMetricCount> order = opt.system_order;
+  normalize_system_metric_order(order);
+
+  int metrics[kSystemMetricCount] = {};
+  int count = 0;
+  for (int metric : order)
+    if (visible[metric])
+      metrics[count++] = metric;
+  if (count == 0)
     return y;
 
   y += m.section_gap;
   b.rect("id_osc_sys_rule", x0, y, iw, 1.0f, kHairline);
   y += 1.0f + m.section_gap;
 
+  const float gap = count > 1 ? m.sys_col_gap : 0.0f;
+  const int columns = count > 1 ? 2 : 1;
+  const int rows = (count + columns - 1) / columns;
+  const float cw = std::floor((iw - gap * (columns - 1)) /
+                              static_cast<float>(columns));
+  const float cell_h = m.caption_h + m.sys_val_h + m.sys_bar_gap + m.sys_bar_h;
+  const float row_stride = cell_h + m.section_gap;
   const float vg = std::round(5.0f * m.k);
+
   auto heading = [&](const char *id, float x, const char *text, float top) {
     b.text(id, x, Builder::left_w(text, m.label_pt), top, m.caption_h, text,
            kHeading, m.label_pt, kWeightLabel, TextAlign::Left, m.label_pt);
@@ -1320,164 +1363,132 @@ inline float system_block(Builder &b, const Metrics &m, float x0, float iw,
     }
   };
 
-  /* The original CPU / GPU / MEMORY columns keep their relative order and
-   * expand to fill the row when one or more are hidden. */
-  if (primary_count > 0) {
-    const float gap = primary_count > 1 ? m.sys_col_gap : 0.0f;
-    const float cw = std::floor((iw - gap * (primary_count - 1)) /
-                                static_cast<float>(primary_count));
-    float x = x0;
-    const float hy = y, vy = y + m.caption_h;
+  for (int index = 0; index < count; ++index) {
+    const int metric = metrics[index];
+    const int row = index / columns;
+    const int col = index % columns;
+    const bool final_wide = columns == 2 && count % 2 == 1 && index == count - 1;
+    const float x = x0 + (final_wide ? 0.0f : col * (cw + gap));
+    const float w = final_wide ? iw : cw;
+    const float hy = y + row * row_stride;
+    const float vy = hy + m.caption_h;
     const float by = vy + m.sys_val_h + m.sys_bar_gap;
-    auto next_column = [&]() {
-      const float here = x;
-      x += cw + gap;
-      return here;
-    };
 
-    if (cpu) {
-      const float cx = next_column();
-      heading("id_osc_cpu_l", cx, "CPU", hy);
-      values("id_osc_cpu_v", "id_osc_cpu_t", cx, vy,
+    switch (metric) {
+    case kSystemCpu: {
+      heading("id_osc_cpu_l", x, "CPU", hy);
+      values("id_osc_cpu_v", "id_osc_cpu_t", x, vy,
              s.cpu_valid ? fmt_pct(s.cpu_pct) : kDash,
              s.cpu_valid && s.cpu_pct > kBarWarnPct ? kWarn : kText,
              s.cpu_temp_valid ? fmt_temp(s.cpu_temp) : kDash,
              s.cpu_temp_valid ? temp_color(s.cpu_temp, kCpuTempScale) : kLabel);
-      b.rect("id_osc_cpu_track", cx, by, cw, m.sys_bar_h, kTrack);
+      b.rect("id_osc_cpu_track", x, by, w, m.sys_bar_h, kTrack);
       if (s.cpu_valid) {
         const int n = static_cast<int>(sizeof(s.cpu_core) / sizeof(s.cpu_core[0]));
-        const float pitch = (cw + m.sys_seg_gap) / static_cast<float>(n);
+        const float pitch = (w + m.sys_seg_gap) / static_cast<float>(n);
         for (int i = 0; i < n; ++i) {
-          const float sx0 = cx + std::round(i * pitch);
-          const float sx1 = cx + std::round((i + 1) * pitch) - m.sys_seg_gap;
+          const float sx0 = x + std::round(i * pitch);
+          const float sx1 = x + std::round((i + 1) * pitch) - m.sys_seg_gap;
           const float sw = std::max(1.0f, sx1 - sx0);
           const float load = std::clamp(s.cpu_core[i], 0.0f, 100.0f);
           const float fw = load > 0.0f ? std::max(1.0f, std::round(sw * load / 100.0f)) : 0.0f;
-          b.rect("id_osc_cpu_seg" + std::to_string(i), sx0, by, fw, m.sys_bar_h,
-                 load > kBarWarnPct ? kWarn : kFill);
+          b.rect("id_osc_cpu_seg" + std::to_string(i), sx0, by, fw,
+                 m.sys_bar_h, load > kBarWarnPct ? kWarn : kFill);
         }
       }
+      break;
     }
-
-    if (gpu) {
-      const float gx = next_column();
-      heading("id_osc_gpu_l", gx, "GPU", hy);
-      const std::string gpu_detail = s.power_valid ? fmt_watts(s.gpu_power_w) : kDash;
-      values("id_osc_gpu_v", "id_osc_gpu_t", gx, vy,
+    case kSystemGpu: {
+      heading("id_osc_gpu_l", x, "GPU", hy);
+      values("id_osc_gpu_v", "id_osc_gpu_t", x, vy,
              s.soc_temp_valid ? fmt_temp(s.soc_temp) : kDash,
              s.soc_temp_valid ? temp_color(s.soc_temp, kGpuTempScale) : kText,
-             gpu_detail, kLabel);
-      b.rect("id_osc_gpu_track", gx, by, cw, m.sys_bar_h, kTrack);
+             s.power_valid ? fmt_watts(s.gpu_power_w) : kDash, kLabel);
+      b.rect("id_osc_gpu_track", x, by, w, m.sys_bar_h, kTrack);
       if (s.power_valid)
-        b.rect("id_osc_gpu_fill", gx, by,
-               std::round(cw * std::clamp(s.gpu_power_w / kGpuPowerScaleW, 0.0f, 1.0f)),
+        b.rect("id_osc_gpu_fill", x, by,
+               std::round(w * std::clamp(s.gpu_power_w / kGpuPowerScaleW,
+                                         0.0f, 1.0f)),
                m.sys_bar_h, kFill);
+      break;
     }
-
-    if (memory) {
-      const float mx = next_column();
-      heading("id_osc_mem_l", mx, "MEMORY", hy);
+    case kSystemMemory: {
+      heading("id_osc_mem_l", x, "MEMORY", hy);
       const float mem_pct = s.ram_valid
-          ? 100.0f * static_cast<float>(s.ram_used_mb) / static_cast<float>(s.ram_total_mb)
+          ? 100.0f * static_cast<float>(s.ram_used_mb) /
+                static_cast<float>(s.ram_total_mb)
           : 0.0f;
       const std::string mem_detail =
           s.vram_valid ? "V " + fmt_gb(s.vram_used_mb) + "GB" : "GB";
-      values("id_osc_mem_v", "id_osc_mem_u", mx, vy,
+      values("id_osc_mem_v", "id_osc_mem_u", x, vy,
              s.ram_valid ? fmt_gb(s.ram_used_mb) : kDash,
              s.ram_valid && mem_pct > kBarWarnPct ? kWarn : kText,
              mem_detail, kLabel);
-      const float mw = x0 + iw - mx;
-      b.rect("id_osc_mem_track", mx, by, mw, m.sys_bar_h, kTrack);
+      b.rect("id_osc_mem_track", x, by, w, m.sys_bar_h, kTrack);
       if (s.ram_valid)
-        b.rect("id_osc_mem_fill", mx, by,
-               std::round(mw * std::clamp(mem_pct, 0.0f, 100.0f) / 100.0f),
+        b.rect("id_osc_mem_fill", x, by,
+               std::round(w * std::clamp(mem_pct, 0.0f, 100.0f) / 100.0f),
                m.sys_bar_h, mem_pct > kBarWarnPct ? kWarn : kFill);
+      break;
     }
-    y = by + m.sys_bar_h;
-  }
-
-  /* Fan and IP have their own secondary row: fan is never appended to the
-   * GPU value, so it remains legible and independently controlled. */
-  const int secondary_count = static_cast<int>(fan) + static_cast<int>(ip);
-  if (secondary_count > 0) {
-    if (primary_count > 0)
-      y += m.section_gap;
-    const float gap = secondary_count > 1 ? m.sys_col_gap : 0.0f;
-    const float cw = std::floor((iw - gap * (secondary_count - 1)) /
-                                static_cast<float>(secondary_count));
-    const float hy = y, vy = y + m.caption_h;
-    const float by = vy + m.sys_val_h + m.sys_bar_gap;
-    float x = x0;
-    if (fan) {
+    case kSystemFan: {
       heading("id_osc_fan_l", x, "FAN", hy);
-      const std::string value = s.fan_valid ? fmt_pct(static_cast<float>(s.fan_duty_pct)) : kDash;
+      const std::string value =
+          s.fan_valid ? fmt_pct(static_cast<float>(s.fan_duty_pct)) : kDash;
       b.text("id_osc_fan_v", x, Builder::left_w(value, m.stat_pt), vy,
              m.sys_val_h, value, kText, m.stat_pt, kWeightValue,
              TextAlign::Left, m.stat_pt);
-      b.rect("id_osc_fan_track", x, by, cw, m.sys_bar_h, kTrack);
+      b.rect("id_osc_fan_track", x, by, w, m.sys_bar_h, kTrack);
       if (s.fan_valid)
         b.rect("id_osc_fan_fill", x, by,
-               std::round(cw * std::clamp(static_cast<float>(s.fan_duty_pct) / 100.0f, 0.0f, 1.0f)),
+               std::round(w * std::clamp(
+                   static_cast<float>(s.fan_duty_pct) / 100.0f, 0.0f, 1.0f)),
                m.sys_bar_h, kFill);
-      x += cw + gap;
+      break;
     }
-    if (ip) {
+    case kSystemIp: {
       heading("id_osc_ip_l", x, "IP ADDRESS", hy);
       const std::string value = s.ip_valid ? s.ip_address : kDash;
-      b.text("id_osc_ip_v", x, cw, vy, m.sys_val_h, value, kText,
+      b.text("id_osc_ip_v", x, w, vy, m.sys_val_h, value, kText,
              m.label_pt, kWeightValue, TextAlign::Left, m.label_pt);
+      break;
     }
-    y = by + m.sys_bar_h;
-  }
-
-  /* Hardware detail metrics use a two-column grid. This keeps clock
-   * strings readable even on narrow 288 px layouts. */
-  if (detail_count > 0) {
-    if (primary_count > 0 || secondary_count > 0)
-      y += m.section_gap;
-    const int detail_columns = detail_count > 1 ? 2 : 1;
-    const int detail_rows = (detail_count + detail_columns - 1) / detail_columns;
-    const float gap = detail_columns > 1 ? m.sys_col_gap : 0.0f;
-    const float cw = std::floor((iw - gap * (detail_columns - 1)) /
-                                static_cast<float>(detail_columns));
-    const float row_y = y;
-    const float row_stride = m.caption_h + m.sys_val_h + m.section_gap;
-    int detail_index = 0;
-    auto detail_metric = [&](const char *id, const char *label,
-                             const std::string &value, Rgba color) {
-      const int row = detail_index / detail_columns;
-      const int col = detail_index % detail_columns;
-      const float hy = row_y + row * row_stride;
-      const float vy = hy + m.caption_h;
-      const float x = x0 + col * (cw + gap);
+    case kSystemCpuClock:
+    case kSystemGpuClock:
+    case kSystemSsdTemp:
+    case kSystemSocPower: {
+      const char *id = "";
+      const char *label = "";
+      std::string value;
+      Rgba color = kText;
+      if (metric == kSystemCpuClock) {
+        id = "cclk"; label = "CPU CLK";
+        value = s.cpu_clock_valid ? fmt("%.0f MHz", s.cpu_clock_mhz) : kDash;
+      } else if (metric == kSystemGpuClock) {
+        id = "gclk"; label = "GPU CLK";
+        value = s.gpu_clock_valid ? fmt("%.0f MHz", s.gpu_clock_mhz) : kDash;
+      } else if (metric == kSystemSsdTemp) {
+        id = "ssd"; label = "SSD TEMP";
+        value = s.ssd_temp_valid ? fmt_temp(s.ssd_temp) : kDash;
+        color = s.ssd_temp_valid ? temp_color(s.ssd_temp, kGpuTempScale) : kText;
+      } else {
+        id = "socpwr"; label = "SOC POWER";
+        value = s.soc_power_valid ? fmt_watts(s.soc_power_w) : kDash;
+      }
       char label_id[48], value_id[48];
       std::snprintf(label_id, sizeof(label_id), "id_osc_%s_l", id);
       std::snprintf(value_id, sizeof(value_id), "id_osc_%s_v", id);
       heading(label_id, x, label, hy);
-      b.text(value_id, x, cw, vy, m.sys_val_h, value, color, m.stat_pt,
+      b.text(value_id, x, w, vy, m.sys_val_h, value, color, m.stat_pt,
              kWeightValue, TextAlign::Left, m.stat_pt);
-      ++detail_index;
-    };
-    if (cpu_clock)
-      detail_metric("cclk", "CPU CLK",
-                    s.cpu_clock_valid ? fmt("%.0f MHz", s.cpu_clock_mhz) : kDash,
-                    kText);
-    if (gpu_clock)
-      detail_metric("gclk", "GPU CLK",
-                    s.gpu_clock_valid ? fmt("%.0f MHz", s.gpu_clock_mhz) : kDash,
-                    kText);
-    if (ssd_temp)
-      detail_metric("ssd", "SSD TEMP",
-                    s.ssd_temp_valid ? fmt_temp(s.ssd_temp) : kDash,
-                    s.ssd_temp_valid ? temp_color(s.ssd_temp, kGpuTempScale) : kText);
-    if (soc_power)
-      detail_metric("socpwr", "SOC POWER",
-                    s.soc_power_valid ? fmt_watts(s.soc_power_w) : kDash,
-                    kText);
-    y = row_y + detail_rows * (m.caption_h + m.sys_val_h) +
-        (detail_rows - 1) * m.section_gap;
+      break;
+    }
+    default:
+      break;
+    }
   }
-  return y;
+
+  return y + rows * cell_h + (rows - 1) * m.section_gap;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1587,59 +1598,72 @@ inline Scene build_compact(const Options &opt, const Readings &r,
         x += vg;
       }
     };
-    if (opt.show_cpu) {
+    const bool visible[kSystemMetricCount] = {
+        opt.show_cpu,       opt.show_gpu,       opt.show_memory,
+        opt.show_fan_duty,  opt.show_ip_address, opt.show_cpu_clock,
+        opt.show_gpu_clock, opt.show_ssd_temp,  opt.show_soc_power};
+    std::array<int, kSystemMetricCount> order = opt.system_order;
+    normalize_system_metric_order(order);
+    for (int metric : order) {
+      if (!visible[metric])
+        continue;
       next_metric();
-      cell("scpu", "CPU", s.cpu_valid ? fmt_pct(s.cpu_pct) : kDash,
-           s.cpu_valid && s.cpu_pct > kBarWarnPct ? kWarn : kText, {"100%"},
-           s.cpu_temp_valid ? fmt_temp(s.cpu_temp) : kDash,
-           s.cpu_temp_valid ? temp_color(s.cpu_temp, kCpuTempScale) : kLabel,
-           {"100\xC2\xB0"});
-    }
-    if (opt.show_gpu) {
-      next_metric();
-      cell("sgpu", "GPU", s.soc_temp_valid ? fmt_temp(s.soc_temp) : kDash,
-           s.soc_temp_valid ? temp_color(s.soc_temp, kGpuTempScale) : kText,
-           {"100\xC2\xB0"}, s.power_valid ? fmt_watts(s.gpu_power_w) : kDash,
-           kLabel, {"128 W"});
-    }
-    if (opt.show_memory) {
-      next_metric();
-      const std::string ram = s.ram_valid ? fmt_gb(s.ram_used_mb) : std::string(kDash);
-      const std::string vram = s.vram_valid ? fmt_gb(s.vram_used_mb) : std::string(kDash);
-      const std::string memory_value = ram + "/" + vram;
-      cell("smem", "RAM/V", memory_value, kText, {"999.9/999.9"}, "GB",
-           kLabel, {"GB"});
-    }
-    if (opt.show_fan_duty) {
-      next_metric();
-      cell("sfan", "FAN", s.fan_valid ? fmt_pct(static_cast<float>(s.fan_duty_pct)) : kDash,
-           kText, {"100%"}, "", kLabel, {});
-    }
-    if (opt.show_ip_address) {
-      next_metric();
-      cell("sip", "IP", s.ip_valid ? s.ip_address : kDash,
-           kText, {"255.255.255.255"}, "", kLabel, {});
-    }
-    if (opt.show_cpu_clock) {
-      next_metric();
-      cell("scclk", "CCLK", s.cpu_clock_valid ? fmt("%.0f", s.cpu_clock_mhz) : kDash,
-           kText, {"9999"}, s.cpu_clock_valid ? "MHz" : "", kLabel, {"MHz"});
-    }
-    if (opt.show_gpu_clock) {
-      next_metric();
-      cell("sgclk", "GCLK", s.gpu_clock_valid ? fmt("%.0f", s.gpu_clock_mhz) : kDash,
-           kText, {"9999"}, s.gpu_clock_valid ? "MHz" : "", kLabel, {"MHz"});
-    }
-    if (opt.show_ssd_temp) {
-      next_metric();
-      cell("sssd", "SSD", s.ssd_temp_valid ? fmt_temp(s.ssd_temp) : kDash,
-           s.ssd_temp_valid ? temp_color(s.ssd_temp, kGpuTempScale) : kText,
-           {"100°"}, "", kLabel, {});
-    }
-    if (opt.show_soc_power) {
-      next_metric();
-      cell("ssocpwr", "SOC PWR", s.soc_power_valid ? fmt_watts(s.soc_power_w) : kDash,
-           kText, {"999 W"}, "", kLabel, {});
+      switch (metric) {
+      case kSystemCpu:
+        cell("scpu", "CPU", s.cpu_valid ? fmt_pct(s.cpu_pct) : kDash,
+             s.cpu_valid && s.cpu_pct > kBarWarnPct ? kWarn : kText, {"100%"},
+             s.cpu_temp_valid ? fmt_temp(s.cpu_temp) : kDash,
+             s.cpu_temp_valid ? temp_color(s.cpu_temp, kCpuTempScale) : kLabel,
+             {"100\xC2\xB0"});
+        break;
+      case kSystemGpu:
+        cell("sgpu", "GPU", s.soc_temp_valid ? fmt_temp(s.soc_temp) : kDash,
+             s.soc_temp_valid ? temp_color(s.soc_temp, kGpuTempScale) : kText,
+             {"100\xC2\xB0"}, s.power_valid ? fmt_watts(s.gpu_power_w) : kDash,
+             kLabel, {"128 W"});
+        break;
+      case kSystemMemory: {
+        const std::string ram =
+            s.ram_valid ? fmt_gb(s.ram_used_mb) : std::string(kDash);
+        const std::string vram =
+            s.vram_valid ? fmt_gb(s.vram_used_mb) : std::string(kDash);
+        cell("smem", "RAM/V", ram + "/" + vram, kText, {"999.9/999.9"},
+             "GB", kLabel, {"GB"});
+        break;
+      }
+      case kSystemFan:
+        cell("sfan", "FAN",
+             s.fan_valid ? fmt_pct(static_cast<float>(s.fan_duty_pct)) : kDash,
+             kText, {"100%"}, "", kLabel, {});
+        break;
+      case kSystemIp:
+        cell("sip", "IP", s.ip_valid ? s.ip_address : kDash, kText,
+             {"255.255.255.255"}, "", kLabel, {});
+        break;
+      case kSystemCpuClock:
+        cell("scclk", "CCLK",
+             s.cpu_clock_valid ? fmt("%.0f", s.cpu_clock_mhz) : kDash, kText,
+             {"9999"}, s.cpu_clock_valid ? "MHz" : "", kLabel, {"MHz"});
+        break;
+      case kSystemGpuClock:
+        cell("sgclk", "GCLK",
+             s.gpu_clock_valid ? fmt("%.0f", s.gpu_clock_mhz) : kDash, kText,
+             {"9999"}, s.gpu_clock_valid ? "MHz" : "", kLabel, {"MHz"});
+        break;
+      case kSystemSsdTemp:
+        cell("sssd", "SSD",
+             s.ssd_temp_valid ? fmt_temp(s.ssd_temp) : kDash,
+             s.ssd_temp_valid ? temp_color(s.ssd_temp, kGpuTempScale) : kText,
+             {"100°"}, "", kLabel, {});
+        break;
+      case kSystemSocPower:
+        cell("ssocpwr", "SOC PWR",
+             s.soc_power_valid ? fmt_watts(s.soc_power_w) : kDash, kText,
+             {"999 W"}, "", kLabel, {});
+        break;
+      default:
+        break;
+      }
     }
   }
   x += px(14.0f);
