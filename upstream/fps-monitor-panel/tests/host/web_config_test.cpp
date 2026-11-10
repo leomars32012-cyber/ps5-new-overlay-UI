@@ -31,6 +31,10 @@ int main() {
   assert(!valid_value(*find_key("frame_graph_opacity"), "10"));
   assert(!valid_value(*find_key("enabled"), ""));
   assert(!valid_value(*find_key("theme"), "Vice"));
+  for (const char *theme : {"classic", "mono", "aurora", "vice", "emerald",
+                            "sunset", "arctic", "crimson", "gold"})
+    assert(valid_value(*find_key("theme"), theme));
+  assert(!valid_value(*find_key("theme"), "neon"));
   assert(find_key("show_ip_address"));
   assert(valid_value(*find_key("show_fan_duty"), "true"));
   assert(!valid_value(*find_key("show_fan_duty"), "yes"));
