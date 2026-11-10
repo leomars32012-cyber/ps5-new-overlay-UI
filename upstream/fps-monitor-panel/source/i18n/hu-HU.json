@@ -1,0 +1,10 @@
+{
+  "meta": {
+    "id": "hu",
+    "bcp47": "hu-HU",
+    "fallback": false
+  },
+  "notifications": {
+    "notify.brand": "FPS Monitor"
+  }
+}

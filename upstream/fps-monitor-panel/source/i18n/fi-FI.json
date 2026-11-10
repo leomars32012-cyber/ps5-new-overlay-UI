@@ -1,0 +1,10 @@
+{
+  "meta": {
+    "id": "fi",
+    "bcp47": "fi-FI",
+    "fallback": false
+  },
+  "notifications": {
+    "notify.brand": "FPS Monitor"
+  }
+}

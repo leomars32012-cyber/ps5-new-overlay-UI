@@ -1,0 +1,10 @@
+{
+  "meta": {
+    "id": "zh-Hant",
+    "bcp47": "zh-TW",
+    "fallback": false
+  },
+  "notifications": {
+    "notify.brand": "FPS Monitor"
+  }
+}

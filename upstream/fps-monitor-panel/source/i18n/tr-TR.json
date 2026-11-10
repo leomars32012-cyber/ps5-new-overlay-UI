@@ -1,0 +1,10 @@
+{
+  "meta": {
+    "id": "tr",
+    "bcp47": "tr-TR",
+    "fallback": false
+  },
+  "notifications": {
+    "notify.brand": "FPS Monitor"
+  }
+}

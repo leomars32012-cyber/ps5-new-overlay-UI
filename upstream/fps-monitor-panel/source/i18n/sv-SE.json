@@ -1,0 +1,10 @@
+{
+  "meta": {
+    "id": "sv",
+    "bcp47": "sv-SE",
+    "fallback": false
+  },
+  "notifications": {
+    "notify.brand": "FPS Monitor"
+  }
+}

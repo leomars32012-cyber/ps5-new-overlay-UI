@@ -1,0 +1,10 @@
+{
+  "meta": {
+    "id": "vi",
+    "bcp47": "vi-VN",
+    "fallback": false
+  },
+  "notifications": {
+    "notify.brand": "FPS Monitor"
+  }
+}

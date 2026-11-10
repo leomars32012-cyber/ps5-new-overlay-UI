@@ -1,0 +1,59 @@
+# fps-monitor configuration (optional)
+#
+# Copy to /data/fps-monitor/config.ini on the console, or use the settings
+# web app at http://<ps5-ip>:1994/, which edits the [overlay] keys in place
+# (creating the file if needed). Without the file every key below uses the
+# value shown. The [meta] section is required: a file without
+# schema_version=1 is ignored. Invalid values fall back to the default. The
+# overlay picks up changes within about a second; no reboot needed.
+
+[meta]
+schema_version=1
+
+[overlay]
+# enabled shows or hides the whole overlay.
+# Available values: true, false
+enabled=true
+# edge chooses the screen edge the overlay is anchored to.
+# Available values: top, bottom
+edge=top
+# align anchors the overlay to the left, center, or right of that edge.
+# Available values: left, center, right
+align=left
+# font_size sets the overlay text size.
+# Available values: small, medium, large
+font_size=medium
+# detail picks how much the monitor shows: an FPS pill, one compact
+# strip, or a corner panel (full is currently the same as panel). The panel
+# shows FPS with AVG / LOW over the last 10 s, the frame time (with a red
+# HITCH value for frames over 100 ms), a session row, the FPS and frame-time
+# charts, a stability bar and the system row.
+# Available values: minimal, compact, panel, full
+detail=panel
+# opacity is the background opacity in percent; 0 hides it.
+# Available values: 0, 40, 65, 85
+opacity=85
+# theme picks the colours. aurora adds a cyan edge bar, vice a pink and
+# orange top bar.
+# Available values: classic, mono, aurora, vice
+theme=classic
+# brand shows the "4aLse Benchmarks" header on the panel.
+# Available values: true, false
+brand=false
+# fps_pill also shows the FPS pill in the opposite corner.
+# Available values: true, false
+fps_pill=false
+# system shows the CPU, GPU and memory row under the charts (CPU and GPU
+# only in the compact strip).
+# Available values: true, false
+system=true
+# frame_graph shows the 7.5 s frame-time graph centred along the bottom edge
+# (the top edge when edge=bottom).
+# Available values: true, false
+frame_graph=true
+# frame_graph_opacity is the graph's background opacity in percent.
+# Available values: 0, 40, 65, 85
+frame_graph_opacity=85
+# margin is the gap from the screen edges, in pixels.
+# Available values: 0, 5, 10, 20
+margin=20
