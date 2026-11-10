@@ -33,9 +33,9 @@ detail=panel
 # opacity is the background opacity in percent; 0 hides it.
 # Available values: 0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100
 opacity=85
-# theme picks the colours. aurora adds a cyan edge bar, vice a pink and
-# orange top bar.
-# Available values: classic, mono, aurora, vice
+# theme picks the colours. Each theme changes the palette and its accent
+# decoration without changing overlay layout.
+# Available values: classic, mono, aurora, vice, emerald, sunset, arctic, crimson, gold
 theme=classic
 # brand shows the "4aLse Benchmarks" header on the panel.
 # Available values: true, false
