@@ -605,6 +605,8 @@ static void check_metric_order() {
       "id_osc_gclk_l", "id_osc_ssd_l", "id_osc_socpwr_l"};
 
   Options compact = options(Detail::Compact, Theme::Classic);
+  compact.show_fan_duty = true;
+  compact.show_ip_address = true;
   compact.system_order = reversed;
   const Scene compact_scene = build_scene(compact, f.r, f.h);
   for (int i = 0; i + 1 < kSystemMetricCount; ++i) {
@@ -615,6 +617,8 @@ static void check_metric_order() {
   }
 
   Options panel = options(Detail::Panel, Theme::Classic);
+  panel.show_fan_duty = true;
+  panel.show_ip_address = true;
   panel.system_order = reversed;
   const Scene panel_scene = build_scene(panel, f.r, f.h);
   for (int i = 0; i + 1 < kSystemMetricCount; ++i) {
