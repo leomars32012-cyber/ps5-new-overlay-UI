@@ -253,11 +253,13 @@ static void check_scene(Detail d, Theme t, State st, BarEdge edge,
             ctx + " FPS glyphs are horizontally centered in their slot");
       if (d == Detail::Compact) {
         const float line_h = std::ceil(static_cast<float>(m.strip_pt) * 1.6f);
-        const float strip_h = m.strip_chart_h;
-        const float strip_y = std::round((m.line_h - strip_h) * 0.5f);
-        const float expected_top = strip_y + (strip_h - line_h) * 0.5f;
-        CHECK(std::fabs((fps->y + fps->margin_top) - expected_top) < 0.51f,
-              ctx + " compact FPS line box is vertically centered in strip");
+        const float expected_top = s.y + (s.h - line_h) * 0.5f;
+        const float actual_top = fps->y + fps->margin_top;
+        CHECK(std::fabs(actual_top - expected_top) < 0.51f,
+              ctx + " compact FPS renderer line box is vertically centered");
+        CHECK(actual_top >= s.y - 0.5f &&
+                  actual_top + line_h <= s.y + s.h + 0.5f,
+              ctx + " compact FPS renderer line box fits inside main box");
       }
     }
   }
