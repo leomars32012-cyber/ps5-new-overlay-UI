@@ -666,6 +666,77 @@ void sample_system(unsigned int idle_tid[kCpuCores], int& current_bank) {
 }
 
 void scene_render() {
+  /*
+   * Widget IDs are stable across ordinary value/layout changes, so keep the
+   * cache for those. Changes that alter the scene's widget inventory should
+   * release the previous inventory once, before building the new scene.
+   *
+   * This prevents a Full + graph scene from leaving hundreds of pinned,
+   * off-screen widgets in the cache when switching to Compact / Minimal.
+   * The first scene is already preceded by overlay_scene_remove_all() during
+   * initialization.
+   */
+  struct WidgetInventory {
+    int detail;
+    bool frame_graph;
+    bool brand;
+    bool fps_pill;
+    bool show_system;
+    bool show_fps;
+    bool show_cpu;
+    bool show_gpu;
+    bool show_memory;
+    bool show_ip_address;
+    bool show_fan_duty;
+    bool show_cpu_clock;
+    bool show_gpu_clock;
+    bool show_ssd_temp;
+    bool show_soc_power;
+  };
+  static WidgetInventory previous{};
+  static bool inventory_initialized = false;
+
+  const WidgetInventory current{
+      g_settings.overlay_detail,
+      g_settings.overlay_frame_graph,
+      g_settings.overlay_brand,
+      g_settings.overlay_fps_pill,
+      g_settings.overlay_system,
+      g_settings.overlay_fps,
+      g_settings.overlay_cpu,
+      g_settings.overlay_gpu,
+      g_settings.overlay_ram,
+      g_settings.overlay_ip,
+      g_settings.overlay_fan,
+      g_settings.overlay_cpu_clock,
+      g_settings.overlay_gpu_clock,
+      g_settings.overlay_ssd_temp,
+      g_settings.overlay_soc_power};
+
+  const bool inventory_changed =
+      inventory_initialized &&
+      (previous.detail != current.detail ||
+       previous.frame_graph != current.frame_graph ||
+       previous.brand != current.brand ||
+       previous.fps_pill != current.fps_pill ||
+       previous.show_system != current.show_system ||
+       previous.show_fps != current.show_fps ||
+       previous.show_cpu != current.show_cpu ||
+       previous.show_gpu != current.show_gpu ||
+       previous.show_memory != current.show_memory ||
+       previous.show_ip_address != current.show_ip_address ||
+       previous.show_fan_duty != current.show_fan_duty ||
+       previous.show_cpu_clock != current.show_cpu_clock ||
+       previous.show_gpu_clock != current.show_gpu_clock ||
+       previous.show_ssd_temp != current.show_ssd_temp ||
+       previous.show_soc_power != current.show_soc_power);
+
+  if (inventory_changed) {
+    overlay_scene_remove_all();
+  }
+  previous = current;
+  inventory_initialized = true;
+
   scene::Readings &r = g_readings;
   scene::Options o{};
   o.screen_w = g_overlay_layout.screen_w;
