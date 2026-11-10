@@ -5,6 +5,9 @@
 #include "external_symbols.hpp"
 #include "hooked_funcs.hpp"
 #include "ipc.hpp"
+#if defined(PS5_OVERLAY_PERF_DIAGNOSTICS)
+#include "overlay_perf_diagnostics.hpp"
+#endif
 
 #include <algorithm>
 #include <cmath>
@@ -124,7 +127,11 @@ Widget *created(Widget &&w, const std::string &id) {
   if ((g_create_flips & 1) && ++g_create_flips <= 2) {
     LOG_INFO("overlay: widget creation recovered (%s)", id.c_str());
   }
-  return &(g_widgets[id] = w);
+  Widget &stored = g_widgets[id] = std::move(w);
+#if defined(PS5_OVERLAY_PERF_DIAGNOSTICS)
+  onion::overlay::perf::record_widget_created(g_widgets.size());
+#endif
+  return &stored;
 }
 
 bool same_color(const Rgba &a, const Rgba &b) {
@@ -134,14 +141,30 @@ bool same_color(const Rgba &a, const Rgba &b) {
 /* Shared by rects and text cells: position + size of a Panel. */
 void place_panel(Widget &w, float x, float y, float width, float height) {
   MonoClass *cls = panel_class();
-  if (w.x != x)
+  if (w.x != x) {
+#if defined(PS5_OVERLAY_PERF_DIAGNOSTICS)
+    onion::overlay::perf::record_property_update();
+#endif
     Set_Property(cls, w.obj, "X", x);
-  if (w.y != y)
+  }
+  if (w.y != y) {
+#if defined(PS5_OVERLAY_PERF_DIAGNOSTICS)
+    onion::overlay::perf::record_property_update();
+#endif
     Set_Property(cls, w.obj, "Y", y);
-  if (w.w != width)
+  }
+  if (w.w != width) {
+#if defined(PS5_OVERLAY_PERF_DIAGNOSTICS)
+    onion::overlay::perf::record_property_update();
+#endif
     Set_Property(cls, w.obj, "Width", width);
-  if (w.h != height)
+  }
+  if (w.h != height) {
+#if defined(PS5_OVERLAY_PERF_DIAGNOSTICS)
+    onion::overlay::perf::record_property_update();
+#endif
     Set_Property(cls, w.obj, "Height", height);
+  }
 }
 
 MonoObject *new_panel(const std::string &name, bool background) {
@@ -259,8 +282,12 @@ void apply_rect(MonoObject *layer, const Rect &r) {
   w->h = r.h;
   if (!same_color(w->color, r.color)) {
     MonoObject *c = CreateUIColor(r.color.r, r.color.g, r.color.b, r.color.a);
-    if (c)
+    if (c) {
+#if defined(PS5_OVERLAY_PERF_DIAGNOSTICS)
+      onion::overlay::perf::record_property_update();
+#endif
       Set_Property_Invoke(panel_class(), w->obj, "BackgroundColor", c);
+    }
     w->color = r.color;
   }
 }
@@ -279,8 +306,12 @@ void apply_text(MonoObject *layer, const Text &t) {
     return;
   w->seen = true;
   MonoClass *lbl = label_class();
-  if (w->w != t.w)
+  if (w->w != t.w) {
+#if defined(PS5_OVERLAY_PERF_DIAGNOSTICS)
+    onion::overlay::perf::record_property_update();
+#endif
     Set_Property(lbl, w->label, "Width", t.w);
+  }
   const CellBox box = text_cell(t);
   place_panel(*w, t.x, box.y, t.w, box.h);
   w->x = t.x;
@@ -288,14 +319,21 @@ void apply_text(MonoObject *layer, const Text &t) {
   w->w = t.w;
   w->h = box.h;
   if (w->text != t.text) {
+#if defined(PS5_OVERLAY_PERF_DIAGNOSTICS)
+    onion::overlay::perf::record_property_update();
+#endif
     Set_Property(lbl, w->label, "Text",
                  mono_string_new(Root_Domain, t.text.c_str()));
     w->text = t.text;
   }
   if (!same_color(w->color, t.color)) {
     MonoObject *c = CreateUIColor(t.color.r, t.color.g, t.color.b, t.color.a);
-    if (c)
+    if (c) {
+#if defined(PS5_OVERLAY_PERF_DIAGNOSTICS)
+      onion::overlay::perf::record_property_update();
+#endif
       Set_Property_Invoke(lbl, w->label, "TextColor", c);
+    }
     w->color = t.color;
   }
 }
@@ -365,6 +403,9 @@ bool overlay_scene_apply(const Scene &scene) {
     Widget &w = entry.second;
     if (w.seen || w.x == kOff)
       continue;
+#if defined(PS5_OVERLAY_PERF_DIAGNOSTICS)
+    onion::overlay::perf::record_property_update();
+#endif
     Set_Property(panel_class(), w.obj, "X", kOff);
     w.x = kOff;
   }
@@ -384,5 +425,8 @@ void overlay_scene_remove_all() {
   }
   LOG_DEBUG("overlay: removed %zu widgets", g_widgets.size());
   g_widgets.clear();
+#if defined(PS5_OVERLAY_PERF_DIAGNOSTICS)
+  onion::overlay::perf::set_widget_cache_size(0);
+#endif
   g_layer_root = nullptr;
 }
