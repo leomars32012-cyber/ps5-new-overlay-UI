@@ -197,8 +197,14 @@ fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
 .metric-order-intro { margin: 0 0 10px; color: var(--muted); font-size: 13px; line-height: 1.45; }
 .metric-order-list { display: grid; gap: 6px; }
 .metric-order-row { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 6px 8px 6px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
-.metric-order-name { flex: 1; min-width: 0; font-size: 14px; font-weight: 500; }
-.metric-order-state { color: var(--muted); font-size: 11px; margin-left: 6px; }
+.metric-order-name { flex: 1; min-width: 0; display: grid; grid-template-columns: auto 1fr; align-items: baseline; column-gap: 8px; row-gap: 1px; font-size: 14px; font-weight: 500; }
+.metric-order-label { min-width: 0; }
+.metric-order-name .key { margin-left: 0; }
+.metric-order-state { grid-column: 1 / -1; color: var(--muted); font-size: 11px; margin: 0; font-weight: 400; }
+.metric-order-state.is-visible { color: var(--ok); }
+.metric-order-switch { width: 46px; height: 26px; }
+.metric-order-switch::after { width: 20px; height: 20px; }
+.metric-order-switch[aria-checked="true"]::after { transform: translateX(20px); }
 .metric-order-actions { display: flex; gap: 4px; }
 .metric-order-actions button { width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 7px; background: var(--sunken); color: var(--fg); font-size: 16px; cursor: pointer; }
 .metric-order-actions button:disabled { opacity: .35; cursor: not-allowed; }
@@ -368,17 +374,8 @@ fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
       { key: 'font_size', label: 'Text size', type: 'seg', options: ['small', 'medium', 'large'] },
       { key: 'opacity', label: 'Background opacity', hint: '0 hides the background', type: 'seg', options: [0, 40, 65, 85], unit: '%' }
     ]},
-    { title: 'Metric visibility', items: [
-      { key: 'show_fps', label: 'FPS', hint: 'Show the in-game frame-rate metric', type: 'bool' },
-      { key: 'show_cpu', label: 'CPU', hint: 'Show CPU temperature and usage', type: 'bool' },
-      { key: 'show_gpu', label: 'GPU', hint: 'Show GPU temperature and usage', type: 'bool' },
-      { key: 'show_memory', label: 'Memory', hint: 'Show system memory usage', type: 'bool' },
-      { key: 'show_ip_address', label: 'IP address', hint: 'Show the console LAN address', type: 'bool' },
-      { key: 'show_fan_duty', label: 'Fan speed', hint: 'Show current fan duty percentage when available', type: 'bool' },
-      { key: 'show_cpu_clock', label: 'CPU clock', hint: 'Show the highest reported CPU core clock', type: 'bool' },
-      { key: 'show_gpu_clock', label: 'GPU clock', hint: 'Show GPU GFXCLK when available', type: 'bool' },
-      { key: 'show_ssd_temp', label: 'SSD temperature', hint: 'Show M.2 NVMe temperature sensor channel 2', type: 'bool' },
-      { key: 'show_soc_power', label: 'SoC power', hint: 'Show the sum of the eight reported SoC power rails', type: 'bool' }
+    { title: 'FPS visibility', items: [
+      { key: 'show_fps', label: 'FPS', hint: 'Show the in-game frame-rate metric', type: 'bool' }
     ]},
     { title: 'Panel contents', items: [
       { key: 'system', label: 'System row', hint: 'CPU, GPU and memory under the charts', type: 'bool' },
@@ -519,8 +516,8 @@ fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
   ORDER_METRICS.forEach((m) => { ORDER_LABELS[m.key] = m; });
   const orderCard = document.createElement('section');
   orderCard.className = 'card group';
-  orderCard.innerHTML = '<h3>Metric order</h3><div class="metric-order">' +
-    '<p class="metric-order-intro">Move any system metric up or down. Hidden metrics keep their position and return to that position when enabled.</p>' +
+  orderCard.innerHTML = '<h3>System metrics</h3><div class="metric-order">' +
+    '<p class="metric-order-intro">Toggle each metric to show or hide it, and use the arrows to change its position. Hidden metrics keep their place in the order.</p>' +
     '<div class="metric-order-list" id="metric-order-list"></div></div>';
   settingsEl.appendChild(orderCard);
   const orderList = $('metric-order-list');
@@ -559,11 +556,31 @@ fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
       row.className = 'metric-order-row';
       const name = document.createElement('div');
       name.className = 'metric-order-name';
-      name.textContent = metric.label;
+      const label = document.createElement('span');
+      label.className = 'metric-order-label';
+      label.textContent = metric.label;
+      const key = document.createElement('span');
+      key.className = 'key';
+      key.textContent = 'overlay.' + metric.visible;
       const state = document.createElement('span');
       state.className = 'metric-order-state';
       state.textContent = draft[metric.visible] ? 'Visible' : 'Hidden';
+      state.classList.toggle('is-visible', !!draft[metric.visible]);
+      name.appendChild(label);
+      name.appendChild(key);
       name.appendChild(state);
+
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'switch metric-order-switch';
+      toggle.setAttribute('role', 'switch');
+      toggle.setAttribute('aria-label', 'Show ' + metric.label);
+      toggle.setAttribute('aria-checked', String(!!draft[metric.visible]));
+      toggle.addEventListener('click', () => {
+        draft[metric.visible] = !draft[metric.visible];
+        render();
+      });
+
       const actions = document.createElement('div');
       actions.className = 'metric-order-actions';
       const up = document.createElement('button');
@@ -577,7 +594,7 @@ fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
       down.disabled = index === order.length - 1 || !ready || busy;
       down.addEventListener('click', () => moveMetric(key, 1));
       actions.appendChild(up); actions.appendChild(down);
-      row.appendChild(name); row.appendChild(actions);
+      row.appendChild(name); row.appendChild(toggle); row.appendChild(actions);
       orderList.appendChild(row);
     });
   }
