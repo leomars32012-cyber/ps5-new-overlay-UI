@@ -1163,9 +1163,12 @@ inline Scene build_minimal(const Options &opt, const Readings &r,
   x += m.dot + std::round(8.0f * m.k);
 
   const float vw = slot_w({"888"}, m.pill_pt);
-  b.text(prefix + "fps_v", x, vw, 0.0f, h,
-         r.fps_valid ? fmt_fps(r.fps) : kDash, kText, m.pill_pt,
-         kWeightHero, TextAlign::Right, m.pill_pt);
+  const std::string fps_value = r.fps_valid ? fmt_fps(r.fps) : kDash;
+  const float fps_text_w =
+      text_advance(fps_value.c_str(), static_cast<float>(m.pill_pt));
+  b.text(prefix + "fps_v", x + (vw - fps_text_w) * 0.5f,
+         Builder::left_w(fps_value, m.pill_pt), 0.0f, h, fps_value, kText,
+         m.pill_pt, kWeightHero, TextAlign::Left, m.pill_pt);
   x += vw + std::round(5.0f * m.k);
   const std::string unit = "FPS";
   b.text(prefix + "fps_l", x, Builder::left_w(unit, m.label_pt), 0.0f, h, unit,
@@ -1545,9 +1548,13 @@ inline Scene build_compact(const Options &opt, const Readings &r,
   /* Current FPS can be hidden without suppressing frame-time / history data. */
   if (opt.show_fps) {
     const float fw = slot_w({"888"}, m.strip_pt);
-    b.text("id_osc_fps_v", x, fw, vy, vr, ok ? fmt_fps(r.fps) : kDash,
+    const std::string fps_value = ok ? fmt_fps(r.fps) : kDash;
+    const float fps_text_w =
+        text_advance(fps_value.c_str(), static_cast<float>(m.strip_pt));
+    b.text("id_osc_fps_v", x + (fw - fps_text_w) * 0.5f,
+           Builder::left_w(fps_value, m.strip_pt), vy, vr, fps_value,
            ok ? fps_value_color(fps_state(r.fps, target)) : kText, m.strip_pt,
-           kWeightHero, TextAlign::Right, m.value_pt);
+           kWeightHero, TextAlign::Left, m.value_pt);
     x += fw + px(6.0f);
     b.text("id_osc_fps_l", x, Builder::left_w("FPS", m.head_pt), ly, lr, "FPS",
            kHeading, m.head_pt, kWeightLabel, TextAlign::Left, m.head_pt);
