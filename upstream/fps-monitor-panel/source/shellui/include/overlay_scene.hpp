@@ -1378,10 +1378,10 @@ inline float system_block(Builder &b, const Metrics &m, float x0, float iw,
     case kSystemCpu: {
       heading("id_osc_cpu_l", x, "CPU", hy);
       values("id_osc_cpu_v", "id_osc_cpu_t", x, vy,
-             s.cpu_valid ? fmt_pct(s.cpu_pct) : kDash,
-             s.cpu_valid && s.cpu_pct > kBarWarnPct ? kWarn : kText,
              s.cpu_temp_valid ? fmt_temp(s.cpu_temp) : kDash,
-             s.cpu_temp_valid ? temp_color(s.cpu_temp, kCpuTempScale) : kLabel);
+             s.cpu_temp_valid ? temp_color(s.cpu_temp, kCpuTempScale) : kText,
+             s.cpu_valid ? fmt_pct(s.cpu_pct) : kDash,
+             s.cpu_valid && s.cpu_pct > kBarWarnPct ? kWarn : kLabel);
       b.rect("id_osc_cpu_track", x, by, w, m.sys_bar_h, kTrack);
       if (s.cpu_valid) {
         const int n = static_cast<int>(sizeof(s.cpu_core) / sizeof(s.cpu_core[0]));
@@ -1610,11 +1610,12 @@ inline Scene build_compact(const Options &opt, const Readings &r,
       next_metric();
       switch (metric) {
       case kSystemCpu:
-        cell("scpu", "CPU", s.cpu_valid ? fmt_pct(s.cpu_pct) : kDash,
-             s.cpu_valid && s.cpu_pct > kBarWarnPct ? kWarn : kText, {"100%"},
-             s.cpu_temp_valid ? fmt_temp(s.cpu_temp) : kDash,
-             s.cpu_temp_valid ? temp_color(s.cpu_temp, kCpuTempScale) : kLabel,
-             {"100\xC2\xB0"});
+        cell("scpu", "CPU", s.cpu_temp_valid ? fmt_temp(s.cpu_temp) : kDash,
+             s.cpu_temp_valid ? temp_color(s.cpu_temp, kCpuTempScale) : kText,
+             {"100\xC2\xB0"},
+             s.cpu_valid ? fmt_pct(s.cpu_pct) : kDash,
+             s.cpu_valid && s.cpu_pct > kBarWarnPct ? kWarn : kLabel,
+             {"100%"});
         break;
       case kSystemGpu:
         cell("sgpu", "GPU", s.soc_temp_valid ? fmt_temp(s.soc_temp) : kDash,
