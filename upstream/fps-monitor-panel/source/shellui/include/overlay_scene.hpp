@@ -1524,7 +1524,10 @@ inline Scene build_compact(const Options &opt, const Readings &r,
   Scene content{};
   Builder b(m, content);
   auto px = [&m](float v) { return std::round(v * m.k); };
-  const float lh = m.line_h;
+  /* The renderer gives every text label a 1.6× font line box. The Compact
+   * strip must be at least that tall for its 36 pt FPS value to fit. */
+  const float fps_line_h = std::ceil(static_cast<float>(m.strip_pt) * 1.6f);
+  const float lh = std::max(m.line_h, fps_line_h);
   const float sh = m.strip_chart_h; /* label row + value row */
   const float ly = std::round((lh - sh) * 0.5f), lr = px(14.0f);
   const float vy = ly + lr, vr = sh - lr;
@@ -1566,16 +1569,13 @@ inline Scene build_compact(const Options &opt, const Readings &r,
     const std::string fps_value = ok ? fmt_fps(r.fps) : kDash;
     const float fps_text_w =
         text_advance(fps_value.c_str(), static_cast<float>(m.strip_pt));
-    /* The hero FPS glyph uses a 1.6× font line box. Center that full
-     * line box in the strip's complete content height, not only the value
-     * sub-row below the label. */
-    const float fps_line_h =
-        std::ceil(static_cast<float>(m.strip_pt) * 1.6f);
-    const float fps_top = ly + (sh - fps_line_h) * 0.5f;
+    /* Center the renderer's complete 1.6× line box in the Compact overlay.
+     * Its height is reserved above, so the cell stays inside the main box. */
+    const float fps_top = (lh - fps_line_h) * 0.5f;
     const float fps_row_y =
-        fps_top - Metrics::text_top(sh, m.strip_pt, m.value_pt);
+        fps_top - Metrics::text_top(fps_line_h, m.strip_pt, m.value_pt);
     b.text("id_osc_fps_v", x + (fw - fps_text_w) * 0.5f,
-           Builder::left_w(fps_value, m.strip_pt), fps_row_y, sh, fps_value,
+           Builder::left_w(fps_value, m.strip_pt), fps_row_y, fps_line_h, fps_value,
            ok ? fps_value_color(fps_state(r.fps, target)) : kText, m.strip_pt,
            kWeightHero, TextAlign::Left, m.value_pt);
     x += fw + px(6.0f);
