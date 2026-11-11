@@ -189,6 +189,64 @@ bool same_color(const Rgba &a, const Rgba &b) {
   return a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;
 }
 
+/* Resolve Label.Text once. The setter takes a managed string reference, so
+ * invoke it through Mono's managed invocation API rather than assuming the
+ * native thunk ABI used by the cached float setters. */
+MonoMethod *label_text_setter() {
+  static MonoMethod *setter = []() -> MonoMethod * {
+    MonoClass *klass = label_class();
+    if (!klass || !mono_class_get_property_from_name ||
+        !mono_property_get_set_method)
+      return nullptr;
+    MonoProperty *property =
+        mono_class_get_property_from_name(klass, "Text");
+    return property ? mono_property_get_set_method(property) : nullptr;
+  }();
+  return setter;
+}
+
+bool set_label_text(MonoObject *label, const std::string &text) {
+  static bool logged_unavailable = false;
+  static bool logged_exception = false;
+  if (!label || !mono_string_new || !mono_runtime_invoke) {
+    if (!logged_unavailable) {
+      LOG_ERROR("overlay: Label.Text update APIs unavailable");
+      logged_unavailable = true;
+    }
+    return false;
+  }
+
+  MonoMethod *setter = label_text_setter();
+  if (!setter) {
+    if (!logged_unavailable) {
+      LOG_ERROR("overlay: Label.Text setter unavailable");
+      logged_unavailable = true;
+    }
+    return false;
+  }
+
+  MonoString *value = mono_string_new(Root_Domain, text.c_str());
+  if (!value) {
+    if (!logged_unavailable) {
+      LOG_ERROR("overlay: Label.Text string allocation failed");
+      logged_unavailable = true;
+    }
+    return false;
+  }
+
+  MonoObject *exception = nullptr;
+  mono_runtime_invoke(setter, label, (void **)&value, &exception);
+  if (exception) {
+    if (!logged_exception) {
+      LOG_ERROR("overlay: Label.Text setter threw (exception=%p); "
+                "further ones not logged", (void *)exception);
+      logged_exception = true;
+    }
+    return false;
+  }
+  return true;
+}
+
 /* Shared by rects and text cells: position + size of a Panel. */
 void place_panel(Widget &w, float x, float y, float width, float height) {
   if (w.x != x) {
@@ -375,9 +433,8 @@ void apply_text(MonoObject *layer, const Text &t) {
 #if defined(PS5_OVERLAY_PERF_DIAGNOSTICS)
     onion::overlay::perf::record_property_update();
 #endif
-    Set_Property(lbl, w->label, "Text",
-                 mono_string_new(Root_Domain, t.text.c_str()));
-    w->text = t.text;
+    if (set_label_text(w->label, t.text))
+      w->text = t.text;
   }
   if (!same_color(w->color, t.color)) {
     MonoObject *c = CreateUIColor(t.color.r, t.color.g, t.color.b, t.color.a);
