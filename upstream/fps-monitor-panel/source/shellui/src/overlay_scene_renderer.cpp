@@ -106,7 +106,7 @@ PropertySetter<Param> resolve_property_setter(MonoClass *klass,
   if (!method)
     return nullptr;
   const uint64_t thunk = mono_compile_method(method);
-  return thunk ? decltype(method)(thunk) : nullptr;
+  return thunk ? reinterpret_cast<PropertySetter<Param>>(static_cast<uintptr_t>(thunk)) : nullptr;
 }
 
 struct RendererSetters {
@@ -191,7 +191,6 @@ bool same_color(const Rgba &a, const Rgba &b) {
 
 /* Shared by rects and text cells: position + size of a Panel. */
 void place_panel(Widget &w, float x, float y, float width, float height) {
-  MonoClass *cls = panel_class();
   if (w.x != x) {
 #if defined(PS5_OVERLAY_PERF_DIAGNOSTICS)
     onion::overlay::perf::record_property_update();
