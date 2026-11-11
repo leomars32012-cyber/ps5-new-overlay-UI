@@ -39,12 +39,18 @@ struct OrbisKernelTimespec {
     int64_t tv_nsec;
 };
 
+/* sceKernelGetCpuUsage returns timeval-style CPU counters, not timespecs. */
+struct OrbisKernelTimeval {
+    int64_t tv_sec;
+    int64_t tv_usec;
+};
+
 struct Proc_Stats
 {
     int32_t lo_data;								//0x00
     uint32_t td_tid;						//0x04
-    OrbisKernelTimespec user_cpu_usage_time;	//0x08
-    OrbisKernelTimespec system_cpu_usage_time;  //0x18
+    OrbisKernelTimeval user_cpu_usage_time;	//0x08
+    OrbisKernelTimeval system_cpu_usage_time;  //0x18
 }; //0x28
 
 extern "C" {
@@ -109,64 +115,96 @@ bool Get_Page_Table_Stats(int vm, int type, int* Used, int* Free, int* Total)
     return true;
 }
 
-void calc_usage(unsigned int idle_tid[8], thread_usages* cur, thread_usages* prev, float usage_out[8])
-{
-    if (cur->Thread_Count <= 0 || prev->Thread_Count <= 0) //Make sure our banks have threads
+static bool valid_monotonic_time(const OrbisKernelTimespec &time) {
+    return time.tv_sec >= 0 && time.tv_nsec >= 0 &&
+           time.tv_nsec < 1000000000;
+}
+
+static bool valid_cpu_time(const OrbisKernelTimeval &time) {
+    return time.tv_sec >= 0 && time.tv_usec >= 0 &&
+           time.tv_usec < 1000000;
+}
+
+static double cpu_time_seconds(const OrbisKernelTimeval &time) {
+    return static_cast<double>(time.tv_sec) +
+           static_cast<double>(time.tv_usec) / 1000000.0;
+}
+
+void calc_usage(unsigned int idle_tid[8], thread_usages* cur,
+                thread_usages* prev, float usage_out[8]) {
+    if (cur->Thread_Count <= 0 || cur->Thread_Count > 3072 ||
+        prev->Thread_Count <= 0 || prev->Thread_Count > 3072 ||
+        !valid_monotonic_time(cur->current_time) ||
+        !valid_monotonic_time(prev->current_time))
         return;
 
-    //Calculate the Current time difference from the last bank to the current bank.
-    // double, not float: absolute seconds lose sub-0.1 s precision after ~6 days of uptime.
-    double Current_Time_Total = ((prev->current_time.tv_sec + (prev->current_time.tv_nsec / 1000000000.0)) - (cur->current_time.tv_sec + (cur->current_time.tv_nsec / 1000000000.0)));
+    const double previous_wall =
+        static_cast<double>(prev->current_time.tv_sec) +
+        static_cast<double>(prev->current_time.tv_nsec) / 1000000000.0;
+    const double current_wall =
+        static_cast<double>(cur->current_time.tv_sec) +
+        static_cast<double>(cur->current_time.tv_nsec) / 1000000000.0;
+    const double wall_delta = current_wall - previous_wall;
 
-    //Here this could use to be improved but essetially what its doing is finding the thread information for the idle threads using their thread Index stored from before.
-    struct Data_s
-    {
+    /* Equal, reversed, or invalid clock samples must never update CPU load. */
+    if (!std::isfinite(wall_delta) || wall_delta <= 0.0)
+        return;
+
+    struct Data_s {
         Proc_Stats* Cur;
         Proc_Stats* Prev;
-    }Data[8] = {};
+    } Data[8] = {};
 
-    for (int i = 0; i < cur->Thread_Count; i++)
-    {
-        for (int j = 0; j < 8; j++)
-        {
-            if (idle_tid[j] == cur->Threads[i].td_tid)
+    for (int i = 0; i < cur->Thread_Count; ++i) {
+        for (int j = 0; j < 8; ++j) {
+            if (idle_tid[j] != 0 && idle_tid[j] == cur->Threads[i].td_tid)
                 Data[j].Cur = &cur->Threads[i];
         }
     }
 
-    for (int i = 0; i < prev->Thread_Count; i++)
-    {
-        for (int j = 0; j < 8; j++)
-        {
-            if (idle_tid[j] == prev->Threads[i].td_tid)
+    for (int i = 0; i < prev->Thread_Count; ++i) {
+        for (int j = 0; j < 8; ++j) {
+            if (idle_tid[j] != 0 && idle_tid[j] == prev->Threads[i].td_tid)
                 Data[j].Prev = &prev->Threads[i];
         }
     }
 
-    //Here we loop through each core to calculate the total usage time as its split into user/sustem
-    for (int i = 0; i < 8; i++)
-    {
-        //An idle thread missing from either bank leaves its core at the last value.
+    for (int i = 0; i < 8; ++i) {
         if (!Data[i].Cur || !Data[i].Prev)
             continue;
 
-        double Prev_Usage_Time = (Data[i].Prev->system_cpu_usage_time.tv_sec + (Data[i].Prev->system_cpu_usage_time.tv_nsec / 1000000.0));
-        Prev_Usage_Time += (Data[i].Prev->user_cpu_usage_time.tv_sec + (Data[i].Prev->user_cpu_usage_time.tv_nsec / 1000000.0));
+        const OrbisKernelTimeval &prev_system =
+            Data[i].Prev->system_cpu_usage_time;
+        const OrbisKernelTimeval &prev_user =
+            Data[i].Prev->user_cpu_usage_time;
+        const OrbisKernelTimeval &cur_system =
+            Data[i].Cur->system_cpu_usage_time;
+        const OrbisKernelTimeval &cur_user =
+            Data[i].Cur->user_cpu_usage_time;
 
-        double Cur_Usage_Time = (Data[i].Cur->system_cpu_usage_time.tv_sec + (Data[i].Cur->system_cpu_usage_time.tv_nsec / 1000000.0));
-        Cur_Usage_Time += (Data[i].Cur->user_cpu_usage_time.tv_sec + (Data[i].Cur->user_cpu_usage_time.tv_nsec / 1000000.0));
+        if (!valid_cpu_time(prev_system) || !valid_cpu_time(prev_user) ||
+            !valid_cpu_time(cur_system) || !valid_cpu_time(cur_user))
+            continue;
 
-        //We calculate the usage using usage time difference between the two samples divided by the current time difference.
-        double Idle_Usage = ((Prev_Usage_Time - Cur_Usage_Time) / Current_Time_Total);
+        const double previous_idle =
+            cpu_time_seconds(prev_system) + cpu_time_seconds(prev_user);
+        const double current_idle =
+            cpu_time_seconds(cur_system) + cpu_time_seconds(cur_user);
+        const double idle_delta = current_idle - previous_idle;
 
-        if (Idle_Usage > 1.0)
-            Idle_Usage = 1.0;
+        /* A reset or regressing counter invalidates this interval. */
+        if (!std::isfinite(idle_delta) || idle_delta < 0.0)
+            continue;
 
-        if (Idle_Usage < 0.0)
-            Idle_Usage = 0.0;
+        double idle_ratio = idle_delta / wall_delta;
+        if (!std::isfinite(idle_ratio))
+            continue;
+        if (idle_ratio > 1.0)
+            idle_ratio = 1.0;
+        if (idle_ratio < 0.0)
+            idle_ratio = 0.0;
 
-        //Get inverse of idle percentage and express in percent.
-        usage_out[i] = static_cast<float>((1.0 - Idle_Usage) * 100.0);
+        usage_out[i] = static_cast<float>((1.0 - idle_ratio) * 100.0);
     }
 }
 
@@ -284,6 +322,57 @@ uint64_t monotonic_ns() {
          static_cast<uint64_t>(ts.tv_nsec);
 }
 
+int update_idle_thread_ids_from_records(
+    const Proc_Stats *threads, int count,
+    unsigned int idle_tid[kCpuCores], bool replace_existing) {
+  if (!threads || count <= 0 || count > kMaxProcThreads)
+    return 0;
+
+  int found = 0;
+  for (int i = 0; i < count; ++i) {
+    char thread_name[0x40] = {};
+    int core = -1;
+    if (sceKernelGetThreadName(threads[i].td_tid, thread_name) != 0 ||
+        sscanf(thread_name, "SceIdleCpu%d", &core) != 1 ||
+        core < 0 || core >= kCpuCores)
+      continue;
+
+    if (replace_existing || idle_tid[core] == 0 ||
+        idle_tid[core] != threads[i].td_tid) {
+      idle_tid[core] = threads[i].td_tid;
+      ++found;
+    }
+  }
+  return found;
+}
+
+void refresh_missing_idle_thread_ids(
+    unsigned int idle_tid[kCpuCores], const thread_usages &sample) {
+  bool missing = false;
+  for (int core = 0; core < kCpuCores && !missing; ++core) {
+    if (idle_tid[core] == 0) {
+      missing = true;
+      break;
+    }
+    bool present = false;
+    for (int i = 0; i < sample.Thread_Count; ++i) {
+      if (sample.Threads[i].td_tid == idle_tid[core]) {
+        present = true;
+        break;
+      }
+    }
+    missing = !present;
+  }
+
+  if (!missing)
+    return;
+
+  const int refreshed = update_idle_thread_ids_from_records(
+      sample.Threads, sample.Thread_Count, idle_tid, false);
+  if (refreshed > 0)
+    LOG_INFO("overlay: refreshed %d idle CPU thread IDs", refreshed);
+}
+
 void discover_idle_thread_ids(unsigned int idle_tid[kCpuCores]) {
   int count = kMaxProcThreads;
   const int rc =
@@ -295,17 +384,8 @@ void discover_idle_thread_ids(unsigned int idle_tid[kCpuCores]) {
     return;
   }
 
-  char thread_name[0x40] = {};
-  int core = 0;
-  int found = 0;
-  for (int i = 0; i < count; i++) {
-    if (!sceKernelGetThreadName(Stat_Data[i].td_tid, thread_name) &&
-        sscanf(thread_name, "SceIdleCpu%d", &core) == 1 && core >= 0 &&
-        core < kCpuCores) {
-      idle_tid[core] = Stat_Data[i].td_tid;
-      ++found;
-    }
-  }
+  const int found = update_idle_thread_ids_from_records(
+      Stat_Data, count, idle_tid, true);
   if (found < kCpuCores)
     LOG_WARN("overlay: found %d of %d idle CPU threads in %d threads", found,
              kCpuCores, count);
@@ -374,7 +454,16 @@ bool sample_cpu_cores(unsigned int idle_tid[kCpuCores], int& current_bank) {
     }
 
     Thread_Count = returned_count;
-    sceKernelClockGettime(kClockIdRealtime, &gThread_Data[current_bank].current_time);
+    const int clock_rc = sceKernelClockGettime(
+        kClockIdRealtime, &gThread_Data[current_bank].current_time);
+    if (clock_rc != 0 ||
+        !valid_monotonic_time(gThread_Data[current_bank].current_time)) {
+      last_rc = clock_rc != 0 ? clock_rc : EINVAL;
+      continue;
+    }
+
+    refresh_missing_idle_thread_ids(
+        idle_tid, gThread_Data[current_bank]);
     current_bank = !current_bank;
 
     if (gThread_Data[current_bank].Thread_Count <= 0)
@@ -382,10 +471,10 @@ bool sample_cpu_cores(unsigned int idle_tid[kCpuCores], int& current_bank) {
 
     calc_usage(idle_tid, &gThread_Data[!current_bank], &gThread_Data[current_bank],
                Usage);
-    log_source_state(true, failing, "sceKernelGetCpuUsage", 0);
+    log_source_state(true, failing, "CPU telemetry sample", 0);
     return true;
   }
-  log_source_state(false, failing, "sceKernelGetCpuUsage", last_rc);
+  log_source_state(false, failing, "CPU telemetry sample", last_rc);
   return false;
 }
 
