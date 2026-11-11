@@ -87,6 +87,54 @@ MonoClass *label_class() {
   return cls;
 }
 
+/* Resolve hot geometry setters once instead of repeating Mono property lookup
+ * and method compilation for every changed widget property on every scene. */
+template <typename Param>
+using PropertySetter = void (*)(MonoObject *, Param);
+
+template <typename Param>
+PropertySetter<Param> resolve_property_setter(MonoClass *klass,
+                                               const char *property_name) {
+  if (!klass || !mono_class_get_property_from_name ||
+      !mono_property_get_set_method || !mono_compile_method)
+    return nullptr;
+  MonoProperty *property =
+      mono_class_get_property_from_name(klass, property_name);
+  if (!property)
+    return nullptr;
+  MonoMethod *method = mono_property_get_set_method(property);
+  if (!method)
+    return nullptr;
+  const uint64_t thunk = mono_compile_method(method);
+  return thunk ? decltype(method)(thunk) : nullptr;
+}
+
+struct RendererSetters {
+  PropertySetter<float> panel_x;
+  PropertySetter<float> panel_y;
+  PropertySetter<float> panel_width;
+  PropertySetter<float> panel_height;
+  PropertySetter<float> label_width;
+
+  RendererSetters()
+      : panel_x(resolve_property_setter<float>(panel_class(), "X")),
+        panel_y(resolve_property_setter<float>(panel_class(), "Y")),
+        panel_width(resolve_property_setter<float>(panel_class(), "Width")),
+        panel_height(resolve_property_setter<float>(panel_class(), "Height")),
+        label_width(resolve_property_setter<float>(label_class(), "Width")) {}
+};
+
+const RendererSetters &renderer_setters() {
+  static const RendererSetters setters;
+  return setters;
+}
+
+void set_cached_float(PropertySetter<float> setter, MonoObject *instance,
+                      float value) {
+  if (setter && instance)
+    setter(instance, value);
+}
+
 MonoObject *find_root_widget() {
   if (!Game)
     return nullptr;
@@ -148,25 +196,25 @@ void place_panel(Widget &w, float x, float y, float width, float height) {
 #if defined(PS5_OVERLAY_PERF_DIAGNOSTICS)
     onion::overlay::perf::record_property_update();
 #endif
-    Set_Property(cls, w.obj, "X", x);
+    set_cached_float(renderer_setters().panel_x, w.obj, x);
   }
   if (w.y != y) {
 #if defined(PS5_OVERLAY_PERF_DIAGNOSTICS)
     onion::overlay::perf::record_property_update();
 #endif
-    Set_Property(cls, w.obj, "Y", y);
+    set_cached_float(renderer_setters().panel_y, w.obj, y);
   }
   if (w.w != width) {
 #if defined(PS5_OVERLAY_PERF_DIAGNOSTICS)
     onion::overlay::perf::record_property_update();
 #endif
-    Set_Property(cls, w.obj, "Width", width);
+    set_cached_float(renderer_setters().panel_width, w.obj, width);
   }
   if (w.h != height) {
 #if defined(PS5_OVERLAY_PERF_DIAGNOSTICS)
     onion::overlay::perf::record_property_update();
 #endif
-    Set_Property(cls, w.obj, "Height", height);
+    set_cached_float(renderer_setters().panel_height, w.obj, height);
   }
 }
 
@@ -230,7 +278,7 @@ Widget *create_text(MonoObject *layer, const Text &t) {
   MonoClass *lbl = label_class();
   Set_Property(lbl, label, "PositionType", 1);
   Set_Property(lbl, label, "MarginLeft", 0.0f);
-  Set_Property(lbl, label, "Width", t.w);
+  set_cached_float(renderer_setters().label_width, label, t.w);
   Widget_Append_Child(cell, label);
   Widget_Append_Child(layer, cell);
 
@@ -316,7 +364,7 @@ void apply_text(MonoObject *layer, const Text &t) {
 #if defined(PS5_OVERLAY_PERF_DIAGNOSTICS)
     onion::overlay::perf::record_property_update();
 #endif
-    Set_Property(lbl, w->label, "Width", t.w);
+    set_cached_float(renderer_setters().label_width, w->label, t.w);
   }
   const CellBox box = text_cell(t);
   place_panel(*w, t.x, box.y, t.w, box.h);
