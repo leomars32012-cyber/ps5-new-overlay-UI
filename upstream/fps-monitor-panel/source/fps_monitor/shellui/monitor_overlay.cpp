@@ -12,6 +12,11 @@
 #include "overlay_scene_renderer.hpp"
 #if defined(PS5_OVERLAY_PERF_DIAGNOSTICS)
 #include "overlay_perf_diagnostics.hpp"
+#define ONION_TELEMETRY_CALL(call, expression)                                \
+  onion::overlay::perf::measure_telemetry_call(                                \
+      onion::overlay::perf::TelemetryCall::call, [&]() { return (expression); })
+#else
+#define ONION_TELEMETRY_CALL(call, expression) (expression)
 #endif
 #include <onion/fps_sample.h>
 #include <onion/net.h>
@@ -86,7 +91,8 @@ bool Get_Page_Table_Stats(int vm, int type, int* Used, int* Free, int* Total)
     int _Total = 0, _Free = 0;
 
     static int failing = 0;
-    const int rc = get_page_table_stats(vm, type, &_Total, &_Free);
+    const int rc = ONION_TELEMETRY_CALL(PageTableStats,
+                                        (get_page_table_stats(vm, type, &_Total, &_Free)));
     const bool ok = rc == 0;
     log_source_state(ok, failing, "get_page_table_stats", rc);
     if (!ok)
@@ -351,9 +357,11 @@ bool sample_cpu_cores(unsigned int idle_tid[kCpuCores], int& current_bank) {
   int last_rc = 0;
   for (int attempt = 0; attempt < kMaxAttempts; ++attempt) {
     gThread_Data[current_bank].Thread_Count = kMaxProcThreads;
-    last_rc = sceKernelGetCpuUsage(
-        reinterpret_cast<Proc_Stats*>(&gThread_Data[current_bank].Threads),
-        &gThread_Data[current_bank].Thread_Count);
+    last_rc = ONION_TELEMETRY_CALL(
+        CpuUsage,
+        (sceKernelGetCpuUsage(
+            reinterpret_cast<Proc_Stats*>(&gThread_Data[current_bank].Threads),
+            &gThread_Data[current_bank].Thread_Count)));
     if (last_rc)
       continue;
 
@@ -489,6 +497,9 @@ void sample_fps() {
  * renders as a dash while the others keep updating.
  */
 void sample_system(unsigned int idle_tid[kCpuCores], int& current_bank) {
+#if defined(PS5_OVERLAY_PERF_DIAGNOSTICS)
+  const uint64_t system_sample_start_ns = onion::overlay::perf::now_ns();
+#endif
   scene::SystemReadings &s = g_readings.sys;
 
   /* The first success spans the microseconds between the two seed
@@ -519,14 +530,16 @@ void sample_system(unsigned int idle_tid[kCpuCores], int& current_bank) {
   static int cpu_temp_failing = 0;
   static int soc_temp_failing = 0;
   int t = 0;
-  int rc = sceKernelGetCpuTemperature(&t);
+  int rc = ONION_TELEMETRY_CALL(CpuTemperature,
+                                (sceKernelGetCpuTemperature(&t)));
   s.cpu_temp_valid = rc == 0 && t > 0 && t < 150;
   log_source_state(s.cpu_temp_valid, cpu_temp_failing,
                    "sceKernelGetCpuTemperature", rc ? rc : t);
   if (s.cpu_temp_valid)
     s.cpu_temp = t;
   t = 0;
-  rc = sceKernelGetSocSensorTemperature(0, &t);
+  rc = ONION_TELEMETRY_CALL(SocTemperature,
+                            (sceKernelGetSocSensorTemperature(0, &t)));
   s.soc_temp_valid = rc == 0 && t > 0 && t < 150;
   log_source_state(s.soc_temp_valid, soc_temp_failing,
                    "sceKernelGetSocSensorTemperature", rc ? rc : t);
@@ -536,7 +549,8 @@ void sample_system(unsigned int idle_tid[kCpuCores], int& current_bank) {
   /* M.2 NVMe temperature is exposed by SoC sensor channel 2. */
   static int ssd_temp_failing = 0;
   t = 0;
-  rc = sceKernelGetSocSensorTemperature(2, &t);
+  rc = ONION_TELEMETRY_CALL(SsdTemperature,
+                            (sceKernelGetSocSensorTemperature(2, &t)));
   s.ssd_temp_valid = rc == 0 && t >= 20 && t <= 130;
   log_source_state(s.ssd_temp_valid, ssd_temp_failing,
                    "sceKernelGetSocSensorTemperature(channel 2)", rc ? rc : t);
@@ -549,13 +563,15 @@ void sample_system(unsigned int idle_tid[kCpuCores], int& current_bank) {
   int core_clocks[16] = {};
   int cpu_clock_rc = -1;
   if (sceKernelGetCpuCoreClock &&
-      (cpu_clock_rc = sceKernelGetCpuCoreClock(core_clocks)) == 0) {
+      (cpu_clock_rc = ONION_TELEMETRY_CALL(
+           CpuCoreClock, (sceKernelGetCpuCoreClock(core_clocks)))) == 0) {
     for (int i = 0; i < 16; ++i)
       if (core_clocks[i] > cpu_mhz)
         cpu_mhz = core_clocks[i];
   }
   if (cpu_mhz <= 0 && sceKernelGetCpuFrequency) {
-    const long hz = sceKernelGetCpuFrequency();
+    const long hz = ONION_TELEMETRY_CALL(CpuFrequency,
+                                         (sceKernelGetCpuFrequency()));
     if (hz > 0)
       cpu_mhz = static_cast<int>(hz / 1000000L);
   }
@@ -571,7 +587,8 @@ void sample_system(unsigned int idle_tid[kCpuCores], int& current_bank) {
   int gpu_clock_rc = -1;
   uint32_t gpu_mhz = 0;
   if (sceKernelGetSocClock &&
-      (gpu_clock_rc = sceKernelGetSocClock(soc_clocks)) == 0)
+      (gpu_clock_rc = ONION_TELEMETRY_CALL(
+           SocClock, (sceKernelGetSocClock(soc_clocks)))) == 0)
     gpu_mhz = soc_clocks[20];
   s.gpu_clock_valid = gpu_clock_rc == 0 && gpu_mhz > 0 && gpu_mhz <= 10000;
   log_source_state(s.gpu_clock_valid, gpu_clock_failing,
@@ -603,7 +620,9 @@ void sample_system(unsigned int idle_tid[kCpuCores], int& current_bank) {
   /* Console IPv4 is sampled independently from hardware telemetry. */
   if (g_settings.overlay_ip) {
     char ip[ONION_NET_IP_ADDRESS_SIZE] = {};
-    s.ip_valid = onion_net_get_ip_address(ip, sizeof(ip)) == ONION_NET_IP_OK;
+    s.ip_valid = ONION_TELEMETRY_CALL(
+                      IpAddress, (onion_net_get_ip_address(ip, sizeof(ip)))) ==
+                  ONION_NET_IP_OK;
     s.ip_address = s.ip_valid ? std::string(ip) : std::string{};
   } else {
     s.ip_valid = false;
@@ -616,7 +635,9 @@ void sample_system(unsigned int idle_tid[kCpuCores], int& current_bank) {
   uint64_t fan_chassis = 0;
   int fan_rc = -1;
   s.fan_valid = sceKernelGetCurrentFanDuty &&
-                (fan_rc = sceKernelGetCurrentFanDuty(&fan_duty, &fan_chassis)) == 0 &&
+                (fan_rc = ONION_TELEMETRY_CALL(
+                     FanDuty,
+                     (sceKernelGetCurrentFanDuty(&fan_duty, &fan_chassis)))) == 0 &&
                 fan_duty <= 1024;
   log_source_state(s.fan_valid, fan_failing, "sceKernelGetCurrentFanDuty",
                    fan_rc ? fan_rc : static_cast<int>(fan_duty));
@@ -637,7 +658,8 @@ void sample_system(unsigned int idle_tid[kCpuCores], int& current_bank) {
   s.power_valid = false;
   s.soc_power_valid = false;
   if (sceKernelGetSocPowerConsumption) {
-    const int prc = sceKernelGetSocPowerConsumption(raw);
+    const int prc = ONION_TELEMETRY_CALL(
+        SocPower, (sceKernelGetSocPowerConsumption(raw)));
     log_source_state(prc == 0, power_failing, "sceKernelGetSocPowerConsumption",
                      prc);
     if (prc == 0) {
@@ -663,6 +685,10 @@ void sample_system(unsigned int idle_tid[kCpuCores], int& current_bank) {
     power_logged = true;
     LOG_INFO("sceKernelGetSocPowerConsumption not resolved; GPU power hidden");
   }
+#if defined(PS5_OVERLAY_PERF_DIAGNOSTICS)
+  onion::overlay::perf::record_system_sample(
+      onion::overlay::perf::now_ns() - system_sample_start_ns);
+#endif
 }
 
 void scene_render() {
@@ -789,6 +815,73 @@ void scene_render() {
         onion::overlay::perf::take_interval();
     const uint64_t scenes = stats.scene_count ? stats.scene_count : 1;
     const uint64_t apply_count = stats.scene_count ? stats.scene_count : 1;
+    const auto telemetry_avg_ms = [&stats](onion::overlay::perf::TelemetryCall call) {
+      const size_t i = static_cast<size_t>(call);
+      return stats.telemetry_call_count[i]
+                 ? static_cast<double>(stats.telemetry_call_total_ns[i]) /
+                       stats.telemetry_call_count[i] / 1000000.0
+                 : 0.0;
+    };
+    const auto telemetry_max_ms = [&stats](onion::overlay::perf::TelemetryCall call) {
+      return static_cast<double>(
+                 stats.telemetry_call_max_ns[static_cast<size_t>(call)]) /
+             1000000.0;
+    };
+    const auto telemetry_count = [&stats](onion::overlay::perf::TelemetryCall call) {
+      return static_cast<unsigned long long>(
+          stats.telemetry_call_count[static_cast<size_t>(call)]);
+    };
+    const double system_avg_ms =
+        stats.system_sample_count
+            ? static_cast<double>(stats.system_sample_total_ns) /
+                  stats.system_sample_count / 1000000.0
+            : 0.0;
+    LOG_INFO(
+        "overlay telemetry/5s: samples=%llu total_avg=%.3fms total_max=%.3fms "
+        "cpu_usage=%.3f/%.3fms#%llu cpu_temp=%.3f/%.3fms#%llu "
+        "soc_temp=%.3f/%.3fms#%llu ssd_temp=%.3f/%.3fms#%llu "
+        "page_stats=%.3f/%.3fms#%llu",
+        static_cast<unsigned long long>(stats.system_sample_count),
+        system_avg_ms,
+        static_cast<double>(stats.system_sample_max_ns) / 1000000.0,
+        telemetry_avg_ms(onion::overlay::perf::TelemetryCall::CpuUsage),
+        telemetry_max_ms(onion::overlay::perf::TelemetryCall::CpuUsage),
+        telemetry_count(onion::overlay::perf::TelemetryCall::CpuUsage),
+        telemetry_avg_ms(onion::overlay::perf::TelemetryCall::CpuTemperature),
+        telemetry_max_ms(onion::overlay::perf::TelemetryCall::CpuTemperature),
+        telemetry_count(onion::overlay::perf::TelemetryCall::CpuTemperature),
+        telemetry_avg_ms(onion::overlay::perf::TelemetryCall::SocTemperature),
+        telemetry_max_ms(onion::overlay::perf::TelemetryCall::SocTemperature),
+        telemetry_count(onion::overlay::perf::TelemetryCall::SocTemperature),
+        telemetry_avg_ms(onion::overlay::perf::TelemetryCall::SsdTemperature),
+        telemetry_max_ms(onion::overlay::perf::TelemetryCall::SsdTemperature),
+        telemetry_count(onion::overlay::perf::TelemetryCall::SsdTemperature),
+        telemetry_avg_ms(onion::overlay::perf::TelemetryCall::PageTableStats),
+        telemetry_max_ms(onion::overlay::perf::TelemetryCall::PageTableStats),
+        telemetry_count(onion::overlay::perf::TelemetryCall::PageTableStats));
+    LOG_INFO(
+        "overlay telemetry/5s: cpu_coreclk=%.3f/%.3fms#%llu "
+        "cpu_freq=%.3f/%.3fms#%llu soc_clk=%.3f/%.3fms#%llu "
+        "ip=%.3f/%.3fms#%llu fan=%.3f/%.3fms#%llu "
+        "soc_power=%.3f/%.3fms#%llu",
+        telemetry_avg_ms(onion::overlay::perf::TelemetryCall::CpuCoreClock),
+        telemetry_max_ms(onion::overlay::perf::TelemetryCall::CpuCoreClock),
+        telemetry_count(onion::overlay::perf::TelemetryCall::CpuCoreClock),
+        telemetry_avg_ms(onion::overlay::perf::TelemetryCall::CpuFrequency),
+        telemetry_max_ms(onion::overlay::perf::TelemetryCall::CpuFrequency),
+        telemetry_count(onion::overlay::perf::TelemetryCall::CpuFrequency),
+        telemetry_avg_ms(onion::overlay::perf::TelemetryCall::SocClock),
+        telemetry_max_ms(onion::overlay::perf::TelemetryCall::SocClock),
+        telemetry_count(onion::overlay::perf::TelemetryCall::SocClock),
+        telemetry_avg_ms(onion::overlay::perf::TelemetryCall::IpAddress),
+        telemetry_max_ms(onion::overlay::perf::TelemetryCall::IpAddress),
+        telemetry_count(onion::overlay::perf::TelemetryCall::IpAddress),
+        telemetry_avg_ms(onion::overlay::perf::TelemetryCall::FanDuty),
+        telemetry_max_ms(onion::overlay::perf::TelemetryCall::FanDuty),
+        telemetry_count(onion::overlay::perf::TelemetryCall::FanDuty),
+        telemetry_avg_ms(onion::overlay::perf::TelemetryCall::SocPower),
+        telemetry_max_ms(onion::overlay::perf::TelemetryCall::SocPower),
+        telemetry_count(onion::overlay::perf::TelemetryCall::SocPower));
     LOG_INFO(
         "overlay perf/5s: scenes=%llu build_avg=%.3fms build_max=%.3fms "
         "apply_avg=%.3fms apply_max=%.3fms rect_avg=%.1f text_avg=%.1f "
