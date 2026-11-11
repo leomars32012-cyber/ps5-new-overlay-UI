@@ -288,14 +288,14 @@ void discover_idle_thread_ids(unsigned int idle_tid[kCpuCores]) {
   int count = kMaxProcThreads;
   const int rc =
       sceKernelGetCpuUsage(reinterpret_cast<Proc_Stats*>(&Stat_Data), &count);
-  if (rc || count <= 0) {
+  if (rc || count <= 0 || count > kMaxProcThreads) {
     LOG_WARN("overlay: sceKernelGetCpuUsage failed (rc=0x%x count=%d); CPU "
              "load hidden",
              rc, count);
     return;
   }
 
-  char thread_name[0x40];
+  char thread_name[0x40] = {};
   int core = 0;
   int found = 0;
   for (int i = 0; i < count; i++) {
@@ -365,7 +365,15 @@ bool sample_cpu_cores(unsigned int idle_tid[kCpuCores], int& current_bank) {
     if (last_rc)
       continue;
 
-    Thread_Count = gThread_Data[current_bank].Thread_Count;
+    /* The kernel reports the number of valid records through Thread_Count.
+     * Reject malformed results before this bank can be used by calc_usage(). */
+    const int returned_count = gThread_Data[current_bank].Thread_Count;
+    if (returned_count <= 0 || returned_count > kMaxProcThreads) {
+      last_rc = EOVERFLOW;
+      continue;
+    }
+
+    Thread_Count = returned_count;
     sceKernelClockGettime(kClockIdRealtime, &gThread_Data[current_bank].current_time);
     current_bank = !current_bank;
 
