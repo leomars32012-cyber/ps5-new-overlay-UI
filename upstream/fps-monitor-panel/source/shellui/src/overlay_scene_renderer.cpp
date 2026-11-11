@@ -516,7 +516,7 @@ bool overlay_scene_apply(const Scene &scene) {
 #if defined(PS5_OVERLAY_PERF_DIAGNOSTICS)
     onion::overlay::perf::record_property_update();
 #endif
-    Set_Property(panel_class(), w.obj, "X", kOff);
+    set_cached_float(renderer_setters().panel_x, w.obj, kOff);
     w.x = kOff;
   }
   return true;
