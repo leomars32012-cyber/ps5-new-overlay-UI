@@ -135,11 +135,54 @@ void set_cached_float(PropertySetter<float> setter, MonoObject *instance,
     setter(instance, value);
 }
 
+/* Cache RootWidget getter metadata and its compiled thunk. The getter itself
+ * must still run for every scene apply: ShellUI can replace Game's RootWidget
+ * while the overlay module remains loaded. Failed resolution is retried on
+ * later applies so early/transient Mono initialisation cannot poison the cache. */
+using RootWidgetGetter = MonoObject *(*)(MonoObject *);
+
+RootWidgetGetter root_widget_getter() {
+  static MonoClass *scene_class = nullptr;
+  static MonoProperty *root_widget_property = nullptr;
+  static MonoMethod *getter_method = nullptr;
+  static RootWidgetGetter getter = nullptr;
+
+  if (!pui_img || !mono_class_from_name ||
+      !mono_class_get_property_from_name || !mono_property_get_get_method ||
+      !mono_compile_method)
+    return nullptr;
+
+  if (!scene_class)
+    scene_class = mono_class_from_name(
+        pui_img, "Sce.PlayStation.PUI.UI2", "Scene");
+  if (!scene_class)
+    return nullptr;
+
+  if (!root_widget_property)
+    root_widget_property =
+        mono_class_get_property_from_name(scene_class, "RootWidget");
+  if (!root_widget_property)
+    return nullptr;
+
+  if (!getter_method)
+    getter_method = mono_property_get_get_method(root_widget_property);
+  if (!getter_method)
+    return nullptr;
+
+  if (!getter) {
+    const uint64_t thunk = mono_compile_method(getter_method);
+    if (thunk)
+      getter = reinterpret_cast<RootWidgetGetter>(
+          static_cast<uintptr_t>(thunk));
+  }
+  return getter;
+}
+
 MonoObject *find_root_widget() {
   if (!Game)
     return nullptr;
-  return Get_Property<MonoObject *>(pui_img, "Sce.PlayStation.PUI.UI2", "Scene",
-                                    Game, "RootWidget");
+  RootWidgetGetter getter = root_widget_getter();
+  return getter ? getter(Game) : nullptr;
 }
 
 /* 0 = not pinned; the object must not be cached then. */
