@@ -348,6 +348,14 @@ int update_idle_thread_ids_from_records(
 
 void refresh_missing_idle_thread_ids(
     unsigned int idle_tid[kCpuCores], const thread_usages &sample) {
+  /* A full name scan is expensive; retry at most once every five seconds. */
+  static int64_t last_refresh_attempt_s = -1;
+  const int64_t now_s = sample.current_time.tv_sec;
+  if (last_refresh_attempt_s >= 0 && now_s >= last_refresh_attempt_s &&
+      now_s - last_refresh_attempt_s < 5)
+    return;
+  last_refresh_attempt_s = now_s;
+
   bool missing = false;
   for (int core = 0; core < kCpuCores && !missing; ++core) {
     if (idle_tid[core] == 0) {
