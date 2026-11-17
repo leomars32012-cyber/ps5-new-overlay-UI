@@ -25,6 +25,21 @@ set(SrcFiles
 add_library(${PROJECT_NAME} STATIC ${SrcFiles})
 set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME "${PROJECT_NAME}")
 
+# The stager is copied as raw bytes into SceShellUI. Verify at build time that
+# its start, INT3 continuation, and end labels are present and correctly
+# ordered in the linked static archive.
+if(NOT CMAKE_NM)
+  message(FATAL_ERROR "CMAKE_NM is required to validate the NineS stager")
+endif()
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+  COMMAND "${CMAKE_COMMAND}"
+    "-DNM=${CMAKE_NM}"
+    "-DARCHIVE=$<TARGET_FILE:${PROJECT_NAME}>"
+    -P "${PROJECT_ROOT}/cmake/VerifyStagerSymbols.cmake"
+  COMMENT "Validating FPS monitor stager boundaries"
+  VERBATIM
+)
+
 # Finalize main target sources
 target_compile_options(${PROJECT_NAME} PUBLIC
 	$<$<COMPILE_LANGUAGE:C>:${C_DEFS} ${C_FLAGS}>
