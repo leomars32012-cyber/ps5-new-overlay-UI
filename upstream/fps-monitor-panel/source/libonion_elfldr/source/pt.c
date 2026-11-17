@@ -16,7 +16,6 @@ along with this program; see the file COPYING. If not, see
 
 #include <onion/log.h>
 #include <errno.h>
-#include <stdarg.h>
 #include <stdint.h>
 #include <string.h>
 #include <stdio.h>
@@ -315,19 +314,11 @@ pt_getlong(pid_t pid, intptr_t addr) {
 
 
 long
-pt_call(pid_t pid, intptr_t addr, unsigned int nargs, ...) {
+pt_call(pid_t pid, intptr_t addr, uint64_t arg1, uint64_t arg2,
+        uint64_t arg3, uint64_t arg4, uint64_t arg5, uint64_t arg6) {
   struct reg jmp_reg;
   struct reg bak_reg;
   uintptr_t entry_rsp;
-  va_list ap;
-  uint64_t args[6] = {0};
-  unsigned int i;
-
-  if (nargs > 6) {
-    errno = EINVAL;
-    return -1;
-  }
-
   if(pt_getregs(pid, &bak_reg)) {
     return -1;
   }
@@ -337,18 +328,12 @@ pt_call(pid_t pid, intptr_t addr, unsigned int nargs, ...) {
   entry_rsp = pt_private_entry_rsp((uintptr_t)bak_reg.r_rsp);
   jmp_reg.r_rsp = entry_rsp;
 
-  va_start(ap, nargs);
-  for (i = 0; i < nargs; ++i) {
-    args[i] = va_arg(ap, uint64_t);
-  }
-  va_end(ap);
-
-  jmp_reg.r_rdi = args[0];
-  jmp_reg.r_rsi = args[1];
-  jmp_reg.r_rdx = args[2];
-  jmp_reg.r_rcx = args[3];
-  jmp_reg.r_r8  = args[4];
-  jmp_reg.r_r9  = args[5];
+  jmp_reg.r_rdi = arg1;
+  jmp_reg.r_rsi = arg2;
+  jmp_reg.r_rdx = arg3;
+  jmp_reg.r_rcx = arg4;
+  jmp_reg.r_r8  = arg5;
+  jmp_reg.r_r9  = arg6;
 
   if(pt_setregs(pid, &jmp_reg)) {
     return -1;
@@ -464,20 +449,12 @@ pt_call2(pid_t pid, intptr_t addr, uint64_t arg1, uintptr_t expected_rip)
 }
 
 long
-pt_syscall(pid_t pid, int sysno, unsigned int nargs, ...) {
+pt_syscall(pid_t pid, int sysno, uint64_t arg1, uint64_t arg2,
+           uint64_t arg3, uint64_t arg4, uint64_t arg5, uint64_t arg6) {
   intptr_t addr = pt_resolve(pid, "HoLVWNanBBc");
   struct reg jmp_reg;
   struct reg bak_reg;
   uintptr_t entry_rsp;
-  va_list ap;
-  uint64_t args[6] = {0};
-  unsigned int i;
-
-  if (nargs > 6) {
-    errno = EINVAL;
-    return -1;
-  }
-
   if(!addr) {
     return -1;
   }
@@ -493,18 +470,12 @@ pt_syscall(pid_t pid, int sysno, unsigned int nargs, ...) {
   entry_rsp = pt_private_entry_rsp((uintptr_t)bak_reg.r_rsp);
   jmp_reg.r_rsp = entry_rsp;
 
-  va_start(ap, nargs);
-  for (i = 0; i < nargs; ++i) {
-    args[i] = va_arg(ap, uint64_t);
-  }
-  va_end(ap);
-
-  jmp_reg.r_rdi = args[0];
-  jmp_reg.r_rsi = args[1];
-  jmp_reg.r_rdx = args[2];
-  jmp_reg.r_r10 = args[3];
-  jmp_reg.r_r8  = args[4];
-  jmp_reg.r_r9  = args[5];
+  jmp_reg.r_rdi = arg1;
+  jmp_reg.r_rsi = arg2;
+  jmp_reg.r_rdx = arg3;
+  jmp_reg.r_r10 = arg4;
+  jmp_reg.r_r8  = arg5;
+  jmp_reg.r_r9  = arg6;
 
   if(pt_setregs(pid, &jmp_reg)) {
     return -1;
@@ -539,83 +510,83 @@ pt_syscall(pid_t pid, int sysno, unsigned int nargs, ...) {
 intptr_t
 pt_mmap(pid_t pid, intptr_t addr, size_t len, int prot, int flags,
 	int fd, off_t off) {
-  return pt_syscall(pid, SYS_mmap, 6, addr, len, prot, flags, fd, off);
+  return pt_syscall(pid, SYS_mmap, addr, len, prot, flags, fd, off);
 }
 
 
 int
 pt_msync(pid_t pid, intptr_t addr, size_t len, int flags) {
-  return pt_syscall(pid, SYS_msync, 3, addr, len, flags);
+  return pt_syscall(pid, SYS_msync, addr, len, flags, 0, 0, 0);
 }
 
 
 int
 pt_munmap(pid_t pid, intptr_t addr, size_t len) {
-  return pt_syscall(pid, SYS_munmap, 2, addr, len);
+  return pt_syscall(pid, SYS_munmap, addr, len, 0, 0, 0, 0);
 }
 
 
 int
 pt_mprotect(pid_t pid, intptr_t addr, size_t len, int prot) {
-  return pt_syscall(pid, SYS_mprotect, 3, addr, len, prot);
+  return pt_syscall(pid, SYS_mprotect, addr, len, prot, 0, 0, 0);
 }
 
 
 int
 pt_socket(pid_t pid, int domain, int type, int protocol) {
-  return (int)pt_syscall(pid, SYS_socket, 3, domain, type, protocol);
+  return (int)pt_syscall(pid, SYS_socket, domain, type, protocol, 0, 0, 0);
 }
 
 
 int
 pt_setsockopt(pid_t pid, int fd, int level, int optname, intptr_t optval,
 	      socklen_t optlen) {
-  return (int)pt_syscall(pid, SYS_setsockopt, 6, fd, level, optname, optval,
+  return (int)pt_syscall(pid, SYS_setsockopt, fd, level, optname, optval,
 			 optlen, 0);
 }
 
 
 int
 pt_close(pid_t pid, int fd) {
-  return (int)pt_syscall(pid, SYS_close, 1, fd);
+  return (int)pt_syscall(pid, SYS_close, fd, 0, 0, 0, 0, 0);
 }
 
 
 int
 pt_bind(pid_t pid, int sockfd, intptr_t addr, uint32_t addrlen) {
-  return (int)pt_syscall(pid, SYS_bind, 3, sockfd, addr, addrlen);
+  return (int)pt_syscall(pid, SYS_bind, sockfd, addr, addrlen, 0, 0, 0);
 }
 
 
 ssize_t
 pt_recvmsg(pid_t pid, int fd, intptr_t msg, int flags) {
-  return (int)pt_syscall(pid, SYS_recvmsg, 3, fd, msg, flags);
+  return (int)pt_syscall(pid, SYS_recvmsg, fd, msg, flags, 0, 0, 0);
 }
 
 
 int
 pt_dup2(pid_t pid, int oldfd, int newfd) {
-  return (int)pt_syscall(pid, SYS_dup2, 2, oldfd, newfd);
+  return (int)pt_syscall(pid, SYS_dup2, oldfd, newfd, 0, 0, 0, 0);
 }
 
 
 int
 pt_rdup(pid_t pid, pid_t other_pid, int fd) {
-  return (int)pt_syscall(pid, 0x25b, 2, other_pid, fd);
+  return (int)pt_syscall(pid, 0x25b, other_pid, fd, 0, 0, 0, 0);
 }
 
 
 int
 pt_pipe(pid_t pid, intptr_t pipefd) {
   intptr_t faddr = pt_resolve(pid, "-Jp7F+pXxNg");
-  return (int)pt_call(pid, faddr, 1, pipefd);
+  return (int)pt_call(pid, faddr, pipefd, 0, 0, 0, 0, 0);
 }
 
 
 int
 pt_errno(pid_t pid) {
   intptr_t faddr = pt_resolve(pid, "9BcDykPmo1I");
-  intptr_t addr = pt_call(pid, faddr, 0);
+  intptr_t addr = pt_call(pid, faddr, 0, 0, 0, 0, 0, 0);
   return pt_getint(pid, addr);
 }
 
