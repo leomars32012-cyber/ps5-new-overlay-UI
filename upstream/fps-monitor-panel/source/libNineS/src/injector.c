@@ -170,21 +170,46 @@ int inject_elf(struct proc* proc, void* elf)
         goto exit;
     }
 
+    /*
+     * Never attempt ptrace without a recoverable privilege state. If the
+     * original Auth-ID cannot be read, abort before changing credentials.
+     */
+    if (read_self_authid(&original_authid) != 0)
+    {
+        LOG_ERROR("[-] inject: authid backup failed; refusing injection");
+        status = false;
+        goto exit;
+    }
+
+    ptrace_authid_changed = 1;
+    LOG_DEBUG("[+] inject: saved original authid=0x%lx",
+              (unsigned long)original_authid);
+
     /* Scoped PTRACE_AUTHID for attach/load only (not DEBUG_AUTHID). */
-    if (read_self_authid(&original_authid) == 0)
-    {
-        ptrace_authid_changed = 1;
-        LOG_DEBUG("[+] inject: backup authid=0x%lx",
-                    (unsigned long)original_authid);
-    }
-    else
-    {
-        LOG_ERROR("[-] inject: authid backup failed (continuing)");
-    }
     set_ucred_to_ptrace();
 
+    /*
+     * Successful PT_ATTACH is the operational check that privilege
+     * elevation was sufficient. pt_attach tracks ownership immediately
+     * after PT_ATTACH, including its waitpid failure path.
+     */
     if (pt_attach(proc->pid) < 0)
     {
+        const int attach_errno = errno;
+        if (pt_is_attached(proc->pid))
+        {
+            attached = true;
+            if (pt_detach(proc->pid, 0) == 0)
+            {
+                attached = false;
+            }
+            else
+            {
+                LOG_ERROR("[-] attach cleanup detach failed pid=%d errno=%d",
+                          proc->pid, errno);
+            }
+        }
+        errno = attach_errno;
         LOG_ERROR("Error attaching into PID: %d errno=%d", proc->pid, errno);
         status = false;
         goto exit;
