@@ -269,7 +269,8 @@ inline const char *overlay_detail_name(int detail) {
 }
 
 /** Background opacity in percent; 0 hides the background. */
-inline constexpr std::array<int, 4> kOverlayOpacityOptions = {0, 40, 65, 85};
+inline constexpr std::array<int, 11> kOverlayOpacityOptions = {
+    0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100};
 inline constexpr int kOverlayOpacityDefault = 85;
 
 inline constexpr bool overlay_opacity_valid(int pct) {
