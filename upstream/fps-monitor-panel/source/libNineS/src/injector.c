@@ -163,6 +163,13 @@ int inject_elf(struct proc* proc, void* elf)
         goto exit;
     }
 
+    if (shellcode_size == 0)
+    {
+        LOG_ERROR("[-] Invalid stager boundaries; refusing injection");
+        status = false;
+        goto exit;
+    }
+
     /* Scoped PTRACE_AUTHID for attach/load only (not DEBUG_AUTHID). */
     if (read_self_authid(&original_authid) == 0)
     {
