@@ -359,7 +359,7 @@ module_info_t* load_remote_library(pid_t pid, const char* library_path, const ch
     }
 
     // intptr_t library_str = pt_call(pid, 0, 0x100, PROT_WRITE | PROT_READ, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
-    intptr_t library_str = pt_call(pid, remote_malloc, 1, strlen(library_name) + 1);
+    intptr_t library_str = pt_call(pid, remote_malloc, strlen(library_name) + 1, 0, 0, 0, 0, 0);
     mdbg_copyin(pid, library_path, library_str, strlen(library_path) + 1);
 
     //
@@ -413,7 +413,7 @@ int create_remote_thread(pid_t pid, uintptr_t target_address, uintptr_t paramete
         }
     }
 
-    intptr_t pthread = pt_call(pid, remote_malloc, 1, sizeof(pthread_t));
+    intptr_t pthread = pt_call(pid, remote_malloc, sizeof(pthread_t), 0, 0, 0, 0, 0);
     if (!pthread)
     {
         LOG_ERROR("Unable to allocate memory for pthread pointer!");
@@ -423,5 +423,5 @@ int create_remote_thread(pid_t pid, uintptr_t target_address, uintptr_t paramete
     //
     // We don't have to wait (join), otherwise we would block the whole target
     //
-    return pt_call(pid, remote_pthread_create, 4, pthread, 0, target_address, parameters);
+    return pt_call(pid, remote_pthread_create, pthread, 0, target_address, parameters, 0, 0);
 }
