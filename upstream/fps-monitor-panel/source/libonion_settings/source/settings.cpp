@@ -586,6 +586,11 @@ int parse_overlay_opacity(const char *s, int def) {
   return overlay_opacity_valid(pct) ? pct : def;
 }
 
+int parse_overlay_frame_graph_opacity(const char *s, int def) {
+  const int pct = parse_int_range(s, def, 0, 100);
+  return overlay_frame_graph_opacity_valid(pct) ? pct : def;
+}
+
 int parse_overlay_margin(const char *s, int def) {
   const int px = parse_int_range(s, def, 0, 20);
   return overlay_margin_valid(px) ? px : def;
@@ -885,8 +890,9 @@ bool apply_parser(IniParser *parser, Settings *out) {
   out->overlay_frame_graph = parse_bool(ini_get(parser, "overlay.frame_graph"),
                                         out->overlay_frame_graph);
   out->overlay_frame_graph_opacity =
-      parse_overlay_opacity(ini_get(parser, "overlay.frame_graph_opacity"),
-                            out->overlay_frame_graph_opacity);
+      parse_overlay_frame_graph_opacity(
+          ini_get(parser, "overlay.frame_graph_opacity"),
+          out->overlay_frame_graph_opacity);
   out->overlay_margin = parse_overlay_margin(ini_get(parser, "overlay.margin"),
                                              out->overlay_margin);
   out->overlay_theme = parse_overlay_theme(ini_get(parser, "overlay.theme"),
