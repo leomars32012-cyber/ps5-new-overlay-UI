@@ -463,7 +463,7 @@ elfldr_set_procname(pid_t pid, const char* name) {
   }
 
   pt_copyin(pid, name, buf, strlen(name)+1);
-  pt_syscall(pid, SYS_thr_set_name, -1, buf);
+  pt_syscall(pid, SYS_thr_set_name, 2, -1, buf);
   pt_msync(pid, buf, PAGE_SIZE, MS_SYNC);
   pt_munmap(pid, buf, PAGE_SIZE);
 
@@ -683,7 +683,7 @@ elfldr_spawn(int stdio, char* const argv[], uint8_t* elf, size_t payload_size) {
   free(stack);
   close(kq);
 
-  if(pt_syscall(pid, 599)) {
+  if(pt_syscall(pid, 599, 0)) {
     LOG_PT_PERROR(pid, "sys_dynlib_process_needed_and_relocate");
     pt_detach(pid, SIGKILL);
     return -1;
