@@ -319,6 +319,13 @@ pt_call(pid_t pid, intptr_t addr, uint64_t arg1, uint64_t arg2,
   struct reg jmp_reg;
   struct reg bak_reg;
   uintptr_t entry_rsp;
+
+  /* Never redirect the tracee to a null or invalid remote function address. */
+  if (addr <= 0) {
+    errno = EINVAL;
+    return -1;
+  }
+
   if(pt_getregs(pid, &bak_reg)) {
     return -1;
   }
