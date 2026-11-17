@@ -69,7 +69,8 @@ constexpr int kSprxPollMax = 60;
 constexpr useconds_t kSprxPollUs = 500 * 1000;
 constexpr int kInjectTimeoutMs = 45 * 1000;
 constexpr int kInjectPollMs = 250;
-constexpr int kInjectMaxFailures = 3;
+/* One failed injection is enough: do not repeat remote syscalls on the same ShellUI PID. */
+constexpr int kInjectMaxFailures = 1;
 /* Injecting into a still-booting ShellUI (payload autoloaded at boot next to
  * kstuff etc.) hung its Mono UI and got it killed; wait for it to settle.
  * shortcut: fixed guesses, retune if console logs show earlier is safe. */
@@ -80,7 +81,8 @@ constexpr time_t kShellUiSettleSec = 10;
  * injecting for the session: a restarted ShellUI has a new pid, so the
  * per-pid kInjectMaxFailures alone would retry a crashing overlay forever. */
 constexpr time_t kCrashWindowSec = 120;
-constexpr int kMaxShellUiCrashes = 3;
+/* One ShellUI death shortly after injection disables further attempts this session. */
+constexpr int kMaxShellUiCrashes = 1;
 
 /* Atomic: the web server thread also calls LoadSettings after a save. */
 std::atomic<time_t> g_config_mtime{0};
