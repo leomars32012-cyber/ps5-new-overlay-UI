@@ -1116,7 +1116,7 @@ std::string settings_serialize(const Settings &in) {
   b += "# Available values: minimal, compact, panel, full\n";
   b += "detail=" + std::string(overlay_detail_name(in.overlay_detail)) + "\n";
   b += "# opacity is the background opacity in percent; 0 hides it.\n";
-  b += "# Available values: 0, 40, 65, 85\n";
+  b += "# Available values: 0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100\n";
   b += "opacity=" + std::to_string(in.overlay_opacity) + "\n";
   b += "# brand shows the \"4aLse Benchmarks\" header on the panel.\n";
   b += "# Available values: true, false\n";
