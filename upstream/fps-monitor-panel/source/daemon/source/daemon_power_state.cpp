@@ -16,6 +16,7 @@ namespace {
 
 constexpr unsigned int kWaitModeOr = 2;
 constexpr unsigned int kStateMask = 0xffff;
+constexpr unsigned int kStateShutdownOnGoing = 100;
 constexpr unsigned int kStateSuspendOnGoing = 300;
 constexpr unsigned int kStateMainOnStandby = 500;
 constexpr unsigned int kStateWorking = 1000;
@@ -35,6 +36,8 @@ const char *state_name(DaemonPowerState state) {
     return "MAIN_ON_STANDBY";
   case DaemonPowerState::SuspendOnGoing:
     return "SUSPEND_ON_GOING";
+  case DaemonPowerState::ShutdownOnGoing:
+    return "SHUTDOWN_ON_GOING";
   case DaemonPowerState::Unknown:
     return "UNKNOWN";
   }
@@ -90,6 +93,8 @@ DaemonPowerState read_state_locked() {
 
   const unsigned int raw = static_cast<unsigned int>(pattern & kStateMask);
   switch (raw) {
+  case kStateShutdownOnGoing:
+    return DaemonPowerState::ShutdownOnGoing;
   case kStateWorking:
     return DaemonPowerState::Working;
   case kStateMainOnStandby:
@@ -125,4 +130,8 @@ bool daemon_power_state_is_sleeping(DaemonPowerState state) {
 
 bool daemon_power_state_is_sleeping() {
   return daemon_power_state_is_sleeping(daemon_power_state_get());
+}
+
+bool daemon_power_state_is_shutting_down(DaemonPowerState state) {
+  return state == DaemonPowerState::ShutdownOnGoing;
 }
