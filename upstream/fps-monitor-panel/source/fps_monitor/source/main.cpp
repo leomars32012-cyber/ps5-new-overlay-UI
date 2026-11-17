@@ -218,7 +218,9 @@ bool wait_shellui_ready(pid_t pid) {
 }
 
 void ensure_overlay(onion::ToolboxInject &injector) {
-  if (daemon_power_state_is_sleeping())
+  const DaemonPowerState power_state = daemon_power_state_get();
+  if (daemon_power_state_is_sleeping(power_state) ||
+      daemon_power_state_is_shutting_down(power_state))
     return;
   const pid_t pid = onion_find_pid("SceShellUI");
   /* Uptime; log timestamps use the same clock. */
