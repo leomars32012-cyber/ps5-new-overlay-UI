@@ -69,7 +69,7 @@ int pt_errno(pid_t pid);
 
 
 long pt_call(pid_t pid, intptr_t addr, ...);
-long pt_call2(pid_t pid, intptr_t addr, ...);
+long pt_call2(pid_t pid, intptr_t addr, uint64_t arg1);
 
 intptr_t pt_sceKernelGetProcParam(pid_t pid);
 
