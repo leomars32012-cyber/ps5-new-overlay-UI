@@ -277,9 +277,15 @@ int inject_elf(struct proc* proc, void* elf)
     //
     // Call until hit a breakpoint (stager ends with int3; pt_call2 waits)
     //
-    if (pt_call2(proc->pid, bootstrap, sce_ptr_mem) == -1)
+    const uintptr_t breakpoint_offset =
+        (uintptr_t)stager_breakpoint - (uintptr_t)stager;
+    const uintptr_t expected_breakpoint = (uintptr_t)bootstrap + breakpoint_offset;
+    const long stager_result =
+        pt_call2(proc->pid, bootstrap, sce_ptr_mem, expected_breakpoint);
+    if (stager_result != 0)
     {
-        LOG_ERROR("[-] pt_call2 failed pid=%d errno=%d", proc->pid, errno);
+        LOG_ERROR("[-] stager failed or stopped unexpectedly pid=%d result=%ld errno=%d",
+                  proc->pid, stager_result, errno);
         status = false;
         goto detach;
     }
