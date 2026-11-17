@@ -51,6 +51,29 @@ pt_private_entry_rsp(uintptr_t interrupted_rsp) {
   return (interrupted_rsp & ~(uintptr_t)0xf) - (uintptr_t)0x108;
 }
 
+/*
+ * A tracee may only be detached after its interrupted register context has
+ * been restored.  Keep this state local to the single-target injector.
+ */
+static pid_t g_traced_pid = -1;
+static int g_tracee_safe_to_resume = 1;
+
+/* If waitpid did not establish the stop state, GETREGS is our stop-state probe. */
+static int
+pt_restore_saved_regs(pid_t pid, const struct reg *saved, int known_stopped) {
+  struct reg probe;
+
+  if (!known_stopped && pt_getregs(pid, &probe) != 0) {
+    return -1;
+  }
+  if (pt_setregs(pid, saved) != 0) {
+    return -1;
+  }
+
+  g_tracee_safe_to_resume = 1;
+  return 0;
+}
+
 
 static int
 sys_ptrace(int request, pid_t pid, caddr_t addr, int data) {
@@ -84,7 +107,11 @@ pt_attach(pid_t pid) {
     return -1;
   }
 
-  if (waitpid(pid, &status, WUNTRACED) == -1) {
+  pid_t waited;
+  do {
+    waited = waitpid(pid, &status, WUNTRACED);
+  } while (waited == -1 && errno == EINTR);
+  if (waited == -1) {
     return -1;
   }
 
@@ -96,31 +123,57 @@ pt_attach(pid_t pid) {
     return -1;
   }
 
+  g_traced_pid = pid;
+  g_tracee_safe_to_resume = 1;
   return 0;
 }
 
 
 int
 pt_detach(pid_t pid, int sig) {
+  if (g_traced_pid == pid && !g_tracee_safe_to_resume) {
+    LOG_ERROR("pt_detach: refusing to resume pid=%d; original registers "
+              "could not be restored", (int)pid);
+    errno = EBUSY;
+    return -1;
+  }
   if(sys_ptrace(PT_DETACH, pid, 0, sig) == -1) {
     return -1;
   }
 
+  if (g_traced_pid == pid) {
+    g_traced_pid = -1;
+    g_tracee_safe_to_resume = 1;
+  }
   return 0;
 }
 
-
+/*
+ * Return 0 for a normal single-step SIGTRAP, -2 when the tracee is known to
+ * remain stopped but the step failed/unexpectedly stopped, and -1 when its
+ * execution state could not be established.
+ */
 int
 pt_step(int pid) {
-  if(sys_ptrace(PT_STEP, pid, (caddr_t)1, 0)) {
-    return -1;
+  int status = 0;
+  pid_t waited;
+
+  if (sys_ptrace(PT_STEP, pid, (caddr_t)1, 0) == -1) {
+    return -2; /* PT_STEP was rejected; the tracee remains stopped. */
   }
 
-  if(waitpid(pid, 0, 0) < 0) {
+  do {
+    waited = waitpid(pid, &status, 0);
+  } while (waited == -1 && errno == EINTR);
+
+  if (waited == -1) {
     return -1;
   }
-
-  return 0;
+  if (!WIFSTOPPED(status)) {
+    errno = ESRCH;
+    return -1;
+  }
+  return WSTOPSIG(status) == SIGTRAP ? 0 : -2;
 }
 
 
@@ -241,14 +294,6 @@ pt_call(pid_t pid, intptr_t addr, ...) {
 
   memcpy(&jmp_reg, &bak_reg, sizeof(jmp_reg));
   jmp_reg.r_rip = addr;
-
-  /*
-   * Keep the original stack for restoration, but enter the remote function
-   * on a private ABI-aligned window below it.  Compare single-step return
-   * detection against entry_rsp (not bak_reg.r_rsp): after `ret`, rsp becomes
-   * entry_rsp+8, which is still <= bak_reg.r_rsp when entry_rsp is lowered —
-   * using bak_reg would keep stepping into the garbage return target.
-   */
   entry_rsp = pt_private_entry_rsp((uintptr_t)bak_reg.r_rsp);
   jmp_reg.r_rsp = entry_rsp;
 
@@ -264,31 +309,37 @@ pt_call(pid_t pid, intptr_t addr, ...) {
   if(pt_setregs(pid, &jmp_reg)) {
     return -1;
   }
+  g_tracee_safe_to_resume = 0;
 
-  /* Single-step until the remote function's final `ret` raises rsp past entry. */
   while((uintptr_t)jmp_reg.r_rsp <= entry_rsp) {
-    if(pt_step(pid)) {
+    const int step_rc = pt_step(pid);
+    if (step_rc != 0) {
+      if (pt_restore_saved_regs(pid, &bak_reg, step_rc == -2) != 0) {
+        LOG_ERROR("pt_call: could not restore interrupted registers pid=%d",
+                  (int)pid);
+      }
       return -1;
     }
     if(pt_getregs(pid, &jmp_reg)) {
+      if (pt_restore_saved_regs(pid, &bak_reg, 1) != 0) {
+        LOG_ERROR("pt_call: register read/restore failed pid=%d", (int)pid);
+      }
       return -1;
     }
   }
 
-  // restore registers
-  if(pt_setregs(pid, &bak_reg)) {
+  if (pt_restore_saved_regs(pid, &bak_reg, 1) != 0) {
+    LOG_ERROR("pt_call: failed to restore interrupted registers pid=%d",
+              (int)pid);
     return -1;
   }
-
   return jmp_reg.r_rax;
 }
-
-long 
+long
 pt_call2(pid_t pid, intptr_t addr, ...)
 {
   struct reg jmp_reg;
   struct reg bak_reg;
-  uintptr_t entry_rsp;
   va_list ap;
 
   if(pt_getregs(pid, &bak_reg)) {
@@ -297,15 +348,7 @@ pt_call2(pid_t pid, intptr_t addr, ...)
 
   memcpy(&jmp_reg, &bak_reg, sizeof(jmp_reg));
   jmp_reg.r_rip = addr;
-
-  /*
-   * Stager path (pthread_create + int3).  Same private stack rules as pt_call:
-   * the interrupted ShellUI frame (often SceShellUIMain mid-SwapBuffers) must
-   * not share rsp with the stager or its red zone is clobbered before bak_reg
-   * is restored.
-   */
-  entry_rsp = pt_private_entry_rsp((uintptr_t)bak_reg.r_rsp);
-  jmp_reg.r_rsp = entry_rsp;
+  jmp_reg.r_rsp = pt_private_entry_rsp((uintptr_t)bak_reg.r_rsp);
 
   va_start(ap, addr);
   jmp_reg.r_rdi = va_arg(ap, uint64_t);
@@ -319,46 +362,54 @@ pt_call2(pid_t pid, intptr_t addr, ...)
   if(pt_setregs(pid, &jmp_reg)) {
     return -1;
   }
+  g_tracee_safe_to_resume = 0;
 
-  //
-  // Continue until hit a breakpoint, that must be generated by the called function
-  //
-  /* The signal argument is delivered to the tracee.  SIGCONT is not a
-   * harmless "continue" flag here; injecting it can wake unrelated ShellUI
-   * waiters while the original thread is being repurposed as the stager.
-   */
   if (pt_continue(pid, 0) != 0) {
+    if (pt_restore_saved_regs(pid, &bak_reg, 1) != 0) {
+      LOG_ERROR("pt_call2: continue failed and register restore failed pid=%d",
+                (int)pid);
+    }
     return -1;
   }
 
-  /*
-   * CRITICAL (kylin-core): wait for the target to actually stop on int3 before
-   * restoring registers. Without waitpid, bak_reg is restored while bootstrap
-   * is still running inside SceShellUI → crash / freeze / hard reboot.
-   */
   int status = 0;
-  if (waitpid(pid, &status, 0) == -1) {
+  pid_t waited;
+  do {
+    waited = waitpid(pid, &status, 0);
+  } while (waited == -1 && errno == EINTR);
+
+  if (waited == -1) {
+    /* Recover only if GETREGS proves the tracee is stopped. */
+    if (pt_restore_saved_regs(pid, &bak_reg, 0) != 0) {
+      LOG_ERROR("pt_call2: waitpid failed; tracee state unknown pid=%d errno=%d",
+                (int)pid, errno);
+    }
     return -1;
   }
 
-  /* Only the stager's terminal INT3 is a valid synchronization point.  If
-   * another stop/termination is observed, fail closed and never restore the
-   * old register set while bootstrap code may still be executing. */
-  if (!WIFSTOPPED(status) || WSTOPSIG(status) != SIGTRAP) {
-    LOG_ERROR("[DEBUG-PT] unexpected stager wait status=0x%x stopped=%d sig=%d",
-                status, WIFSTOPPED(status),
-                WIFSTOPPED(status) ? WSTOPSIG(status) : -1);
+  if (!WIFSTOPPED(status)) {
+    LOG_ERROR("pt_call2: target exited before stager stop pid=%d status=0x%x",
+              (int)pid, status);
+    errno = ESRCH;
+    return -1;
+  }
+
+  const int stop_signal = WSTOPSIG(status);
+  if (pt_restore_saved_regs(pid, &bak_reg, 1) != 0) {
+    LOG_ERROR("pt_call2: failed to restore interrupted registers pid=%d",
+              (int)pid);
+    return -1;
+  }
+
+  if (stop_signal != SIGTRAP) {
+    LOG_ERROR("pt_call2: unexpected stager stop pid=%d signal=%d",
+              (int)pid, stop_signal);
     errno = EPROTO;
-    return -1;
-  }
-
-  if (pt_setregs(pid, &bak_reg) != 0) {
     return -1;
   }
 
   return jmp_reg.r_rax;
 }
-
 
 long
 pt_syscall(pid_t pid, int sysno, ...) {
@@ -370,9 +421,8 @@ pt_syscall(pid_t pid, int sysno, ...) {
 
   if(!addr) {
     return -1;
-  } else {
-    addr += 0xa;
   }
+  addr += 0xa;
 
   if(pt_getregs(pid, &bak_reg)) {
     return -1;
@@ -381,13 +431,6 @@ pt_syscall(pid_t pid, int sysno, ...) {
   memcpy(&jmp_reg, &bak_reg, sizeof(jmp_reg));
   jmp_reg.r_rip = addr;
   jmp_reg.r_rax = sysno;
-
-  /*
-   * elfldr_load issues many remote mmap/mprotect/msync calls via this path
-   * while SceShellUIMain may be stopped inside SwapBuffers.  Reusing that
-   * rsp clobbers the red zone and yields Mono "instruction pointer is NULL"
-   * crashes on resume — before any ShellUI payload hook runs.
-   */
   entry_rsp = pt_private_entry_rsp((uintptr_t)bak_reg.r_rsp);
   jmp_reg.r_rsp = entry_rsp;
 
@@ -403,25 +446,32 @@ pt_syscall(pid_t pid, int sysno, ...) {
   if(pt_setregs(pid, &jmp_reg)) {
     return -1;
   }
+  g_tracee_safe_to_resume = 0;
 
-  /* Single-step until the syscall stub's final `ret` raises rsp past entry. */
   while((uintptr_t)jmp_reg.r_rsp <= entry_rsp) {
-    if(pt_step(pid)) {
+    const int step_rc = pt_step(pid);
+    if (step_rc != 0) {
+      if (pt_restore_saved_regs(pid, &bak_reg, step_rc == -2) != 0) {
+        LOG_ERROR("pt_syscall: could not restore interrupted registers pid=%d",
+                  (int)pid);
+      }
       return -1;
     }
     if(pt_getregs(pid, &jmp_reg)) {
+      if (pt_restore_saved_regs(pid, &bak_reg, 1) != 0) {
+        LOG_ERROR("pt_syscall: register read/restore failed pid=%d", (int)pid);
+      }
       return -1;
     }
   }
 
-  // restore registers
-  if(pt_setregs(pid, &bak_reg)) {
+  if (pt_restore_saved_regs(pid, &bak_reg, 1) != 0) {
+    LOG_ERROR("pt_syscall: failed to restore interrupted registers pid=%d",
+              (int)pid);
     return -1;
   }
-
   return jmp_reg.r_rax;
 }
-
 
 intptr_t
 pt_mmap(pid_t pid, intptr_t addr, size_t len, int prot, int flags,
