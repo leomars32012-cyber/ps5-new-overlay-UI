@@ -336,12 +336,10 @@ pt_call(pid_t pid, intptr_t addr, ...) {
   return jmp_reg.r_rax;
 }
 long
-pt_call2(pid_t pid, intptr_t addr, ...)
+pt_call2(pid_t pid, intptr_t addr, uint64_t arg1)
 {
   struct reg jmp_reg;
   struct reg bak_reg;
-  va_list ap;
-
   if(pt_getregs(pid, &bak_reg)) {
     return -1;
   }
@@ -349,15 +347,7 @@ pt_call2(pid_t pid, intptr_t addr, ...)
   memcpy(&jmp_reg, &bak_reg, sizeof(jmp_reg));
   jmp_reg.r_rip = addr;
   jmp_reg.r_rsp = pt_private_entry_rsp((uintptr_t)bak_reg.r_rsp);
-
-  va_start(ap, addr);
-  jmp_reg.r_rdi = va_arg(ap, uint64_t);
-  jmp_reg.r_rsi = va_arg(ap, uint64_t);
-  jmp_reg.r_rdx = va_arg(ap, uint64_t);
-  jmp_reg.r_rcx = va_arg(ap, uint64_t);
-  jmp_reg.r_r8  = va_arg(ap, uint64_t);
-  jmp_reg.r_r9  = va_arg(ap, uint64_t);
-  va_end(ap);
+  jmp_reg.r_rdi = arg1;
 
   if(pt_setregs(pid, &jmp_reg)) {
     return -1;
