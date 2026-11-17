@@ -336,10 +336,12 @@ pt_call(pid_t pid, intptr_t addr, ...) {
   return jmp_reg.r_rax;
 }
 long
-pt_call2(pid_t pid, intptr_t addr, uint64_t arg1)
+pt_call2(pid_t pid, intptr_t addr, uint64_t arg1, uintptr_t expected_rip)
 {
   struct reg jmp_reg;
   struct reg bak_reg;
+  struct reg stopped_reg;
+
   if(pt_getregs(pid, &bak_reg)) {
     return -1;
   }
@@ -385,20 +387,36 @@ pt_call2(pid_t pid, intptr_t addr, uint64_t arg1)
   }
 
   const int stop_signal = WSTOPSIG(status);
+  if (pt_getregs(pid, &stopped_reg) != 0) {
+    LOG_ERROR("pt_call2: could not read stopped registers pid=%d", (int)pid);
+    if (pt_restore_saved_regs(pid, &bak_reg, 1) != 0) {
+      LOG_ERROR("pt_call2: register restore also failed pid=%d", (int)pid);
+    }
+    return -1;
+  }
+
+  const uintptr_t stopped_rip = (uintptr_t)stopped_reg.r_rip;
+  if (stop_signal != SIGTRAP || stopped_rip != expected_rip) {
+    LOG_ERROR("pt_call2: unexpected stop pid=%d signal=%d rip=%#lx expected=%#lx",
+              (int)pid, stop_signal, (unsigned long)stopped_rip,
+              (unsigned long)expected_rip);
+    if (pt_restore_saved_regs(pid, &bak_reg, 1) != 0) {
+      LOG_ERROR("pt_call2: failed to restore registers after unexpected stop pid=%d",
+                (int)pid);
+    }
+    errno = EPROTO;
+    return -1;
+  }
+
+  /* Capture the actual stager result before restoring the interrupted context. */
+  const long stager_result = (long)stopped_reg.r_rax;
   if (pt_restore_saved_regs(pid, &bak_reg, 1) != 0) {
     LOG_ERROR("pt_call2: failed to restore interrupted registers pid=%d",
               (int)pid);
     return -1;
   }
 
-  if (stop_signal != SIGTRAP) {
-    LOG_ERROR("pt_call2: unexpected stager stop pid=%d signal=%d",
-              (int)pid, stop_signal);
-    errno = EPROTO;
-    return -1;
-  }
-
-  return jmp_reg.r_rax;
+  return stager_result;
 }
 
 long
