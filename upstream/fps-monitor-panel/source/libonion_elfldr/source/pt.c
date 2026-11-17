@@ -595,5 +595,5 @@ intptr_t
 pt_sceKernelGetProcParam(pid_t pid) {
   intptr_t faddr = pt_resolve(pid, "959qrazPIrg");
 
-  return pt_call(pid, faddr);
+  return pt_call(pid, faddr, 0, 0, 0, 0, 0, 0);
 }
