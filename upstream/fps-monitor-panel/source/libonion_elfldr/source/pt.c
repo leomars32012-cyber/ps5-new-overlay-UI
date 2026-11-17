@@ -103,31 +103,64 @@ int
 pt_attach(pid_t pid) {
   int status = 0;
 
+  if (g_traced_pid != -1) {
+    errno = EBUSY;
+    return -1;
+  }
+
   if (sys_ptrace(PT_ATTACH, pid, 0, 0) == -1) {
     return -1;
   }
+
+  /*
+   * Record ownership immediately after PT_ATTACH succeeds, not after
+   * waitpid(). If waiting fails, the trace relationship may still exist.
+   * No registers have been changed yet, so a detach preserves the original
+   * execution context.
+   */
+  g_traced_pid = pid;
+  g_tracee_safe_to_resume = 1;
 
   pid_t waited;
   do {
     waited = waitpid(pid, &status, WUNTRACED);
   } while (waited == -1 && errno == EINTR);
+
   if (waited == -1) {
+    const int wait_errno = errno;
+    if (pt_detach(pid, 0) != 0) {
+      LOG_ERROR("pt_attach: waitpid failed and cleanup detach failed pid=%d "
+                "wait_errno=%d detach_errno=%d",
+                (int)pid, wait_errno, errno);
+    }
+    errno = wait_errno;
     return -1;
   }
 
   /* PT_ATTACH must leave the traced process stopped before callers touch
-   * registers or its address space.  A plain waitpid success is not enough:
-   * an exit/continued event must never be treated as the attach stop. */
+   * registers or its address space. */
   if (!WIFSTOPPED(status)) {
+    if (WIFEXITED(status) || WIFSIGNALED(status)) {
+      /* The target exited; the kernel has already released the trace. */
+      g_traced_pid = -1;
+      g_tracee_safe_to_resume = 1;
+    } else if (pt_detach(pid, 0) != 0) {
+      LOG_ERROR("pt_attach: unexpected wait status and cleanup detach failed "
+                "pid=%d status=0x%x detach_errno=%d",
+                (int)pid, status, errno);
+    }
     errno = ESRCH;
     return -1;
   }
 
-  g_traced_pid = pid;
-  g_tracee_safe_to_resume = 1;
   return 0;
 }
 
+/* True while this helper still owns a ptrace relationship with pid. */
+int
+pt_is_attached(pid_t pid) {
+  return g_traced_pid == pid;
+}
 
 int
 pt_detach(pid_t pid, int sig) {
