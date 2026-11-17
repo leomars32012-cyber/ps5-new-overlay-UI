@@ -150,7 +150,10 @@ int inject_elf(struct proc* proc, void* elf)
     int status = true;
     uint64_t original_authid = 0;
     int ptrace_authid_changed = 0;
-    uint64_t sce_ptr_mem;
+    uint64_t sce_ptr_mem = 0;
+    uint64_t bootstrap = 0;
+    int release_stager_mappings = 1;
+    long stager_result = -1;
     uint64_t shellcode_size = get_shellcode_size();
 
     LOG_DEBUG("[+] Elevating for ptrace (PTRACE_AUTHID)...[+]");
@@ -252,7 +255,7 @@ int inject_elf(struct proc* proc, void* elf)
     sce_functions.elf_main = (void*) entry;
     sce_functions.payload_args = (void*) args;
 
-    uint64_t bootstrap = pt_mmap(proc->pid, 0, shellcode_size, PROT_READ|PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+    bootstrap = pt_mmap(proc->pid, 0, shellcode_size, PROT_READ|PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
 
     /* MAP_FAILED is (void*)-1; also reject NULL. (kylin-core) */
     if (!bootstrap || bootstrap == (uint64_t)-1)
@@ -305,8 +308,17 @@ int inject_elf(struct proc* proc, void* elf)
     const uintptr_t breakpoint_offset =
         (uintptr_t)stager_breakpoint - (uintptr_t)stager;
     const uintptr_t expected_breakpoint = (uintptr_t)bootstrap + breakpoint_offset;
-    const long stager_result =
+    /* A negative result means execution/stop state is uncertain; preserve
+     * both mappings rather than risk unmapping memory still in use. */
+    release_stager_mappings = 0;
+    stager_result =
         pt_call2(proc->pid, bootstrap, sce_ptr_mem, expected_breakpoint);
+    if (stager_result >= 0)
+    {
+        /* pthread_create has returned, so the bootstrap and parameter struct
+         * are no longer needed by the newly created payload thread. */
+        release_stager_mappings = 1;
+    }
     if (stager_result != 0)
     {
         LOG_ERROR("[-] stager failed or stopped unexpectedly pid=%d result=%ld errno=%d",
@@ -316,6 +328,22 @@ int inject_elf(struct proc* proc, void* elf)
     }
 
 detach:
+    if (release_stager_mappings)
+    {
+        if (sce_ptr_mem > 0 && sce_ptr_mem != (uint64_t)-1 &&
+            pt_munmap(proc->pid, (intptr_t)sce_ptr_mem, sizeof(sce_functions)) != 0)
+        {
+            LOG_ERROR("[-] failed to release sce_functions mapping pid=%d addr=%#lx",
+                      proc->pid, (unsigned long)sce_ptr_mem);
+        }
+        if (bootstrap > 0 && bootstrap != (uint64_t)-1 &&
+            pt_munmap(proc->pid, (intptr_t)bootstrap, shellcode_size) != 0)
+        {
+            LOG_ERROR("[-] failed to release bootstrap mapping pid=%d addr=%#lx",
+                      proc->pid, (unsigned long)bootstrap);
+        }
+    }
+
     if (pt_detach(proc->pid, 0) == 0)
     {
         attached = false;
