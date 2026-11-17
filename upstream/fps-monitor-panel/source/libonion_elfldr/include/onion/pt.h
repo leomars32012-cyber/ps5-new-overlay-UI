@@ -25,6 +25,7 @@ extern "C" {
 #endif
 
 int pt_attach(pid_t pid);
+int pt_is_attached(pid_t pid);
 int pt_detach(pid_t pid, int sig);
 int pt_step(pid_t pid);
 int pt_continue(pid_t pid, int sig);
