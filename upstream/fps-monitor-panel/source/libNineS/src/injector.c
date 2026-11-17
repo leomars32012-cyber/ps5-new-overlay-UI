@@ -1,6 +1,8 @@
 #include <onion/log.h>
 #include <errno.h>
 #include <unistd.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include "../include/injector.h"
 #include "ps5/klog.h"
@@ -32,34 +34,65 @@ static int write_self_authid(uint64_t authid)
 }
 
 
-int __attribute__((section(".stager_shellcode$1")))  stager(SCEFunctions* functions)
+/*
+ * Keep the bootstrap in one executable section. Separate compiler-generated
+ * "$1"/"$2" function sections do not guarantee contiguous ordered placement.
+ *
+ * This x86-64 SysV stub saves r12, aligns the private stack before calling
+ * pthread_create, then traps. stager_breakpoint is the expected post-INT3 RIP.
+ */
+_Static_assert(sizeof(void *) == 8, "PS5 stager requires x86-64 pointers");
+_Static_assert(offsetof(SCEFunctions, elf_main) == 8,
+               "Unexpected SCEFunctions.elf_main offset");
+_Static_assert(offsetof(SCEFunctions, payload_args) == 16,
+               "Unexpected SCEFunctions.payload_args offset");
+_Static_assert(offsetof(SCEFunctions, pthread_create_ptr) == 24,
+               "Unexpected SCEFunctions.pthread_create_ptr offset");
+
+__asm__(
+    ".section .stager_shellcode,\"ax\",@progbits\n"
+    ".p2align 4\n"
+    ".globl stager\n"
+    ".type stager,@function\n"
+    "stager:\n"
+    "pushq %r12\n"
+    "movq %rdi, %r12\n"
+    "subq $16, %rsp\n"
+    "leaq 8(%rsp), %rdi\n"
+    "xorq %rsi, %rsi\n"
+    "movq 8(%r12), %rdx\n"
+    "movq 16(%r12), %rcx\n"
+    "callq *24(%r12)\n"
+    "int3\n"
+    ".globl stager_breakpoint\n"
+    "stager_breakpoint:\n"
+    "addq $16, %rsp\n"
+    "popq %r12\n"
+    "retq\n"
+    ".globl stager_end\n"
+    "stager_end:\n"
+    ".size stager, stager_end-stager\n"
+    ".previous\n");
+
+extern const unsigned char stager_breakpoint[];
+extern const unsigned char stager_end[];
+
+/* Return zero if the linked bootstrap boundaries are invalid. */
+uint32_t get_shellcode_size(void)
 {
-    pthread_t thread;
-    functions->pthread_create_ptr(&thread, 0, (void *(*)(void *)) functions->elf_main, functions->payload_args);
+    const uintptr_t start_addr = (uintptr_t)stager;
+    const uintptr_t breakpoint_addr = (uintptr_t)stager_breakpoint;
+    const uintptr_t end_addr = (uintptr_t)stager_end;
 
-    asm("int3");
+    if (end_addr <= start_addr || breakpoint_addr <= start_addr ||
+        breakpoint_addr >= end_addr || end_addr - start_addr > 0x1000) {
+        return 0;
+    }
 
-    return 0;
+    return (uint32_t)(end_addr - start_addr);
 }
 
-//
-// Just used to calculate stager size
-//
-int __attribute__((section(".stager_shellcode$2"))) stager_end()
-{
-    return 0;
-}
 
-//
-// Poor man function size counter, temp stuff
-//
-uint32_t get_shellcode_size()
-{
-    return &stager_end - &stager;
-}
-
-
-//
 // Init all remote function pointers needed for injection
 //
 bool init_remote_function_pointers(pid_t pid)
