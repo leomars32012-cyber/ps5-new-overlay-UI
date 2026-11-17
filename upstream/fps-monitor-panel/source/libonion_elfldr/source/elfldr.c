@@ -332,81 +332,141 @@ elfldr_load(pid_t pid, uint8_t *elf) {
  **/
 intptr_t
 elfldr_payload_args(pid_t pid) {
-  int victim_sock;
-  int master_sock;
-  intptr_t buf;
+  int victim_sock = -1;
+  int master_sock = -1;
+  intptr_t buf = 0;
   int pipe0;
   int pipe1;
+  intptr_t args;
+  intptr_t rwpipe;
+  intptr_t rwpair;
+  intptr_t kpipe_addr;
+  intptr_t payloadout;
+  intptr_t getpid_addr;
 
-  if((buf=pt_mmap(pid, 0, PAGE_SIZE, PROT_READ | PROT_WRITE,
-		  MAP_ANONYMOUS | MAP_PRIVATE, -1, 0)) == -1) {
+  if ((buf = pt_mmap(pid, 0, PAGE_SIZE, PROT_READ | PROT_WRITE,
+                     MAP_ANONYMOUS | MAP_PRIVATE, -1, 0)) <= 0) {
     LOG_PT_PERROR(pid, "pt_mmap");
     return 0;
   }
 
-  if((master_sock=pt_socket(pid, AF_INET6, SOCK_DGRAM, IPPROTO_UDP)) < 0) {
-    LOG_PT_PERROR(pid, "pt_socket");
+  if ((master_sock = pt_socket(pid, AF_INET6, SOCK_DGRAM, IPPROTO_UDP)) < 0) {
+    LOG_PT_PERROR(pid, "pt_socket(master)");
+    goto cleanup_before_overlap;
+  }
+
+  if (pt_setint(pid, buf + 0x00, 20) ||
+      pt_setint(pid, buf + 0x04, IPPROTO_IPV6) ||
+      pt_setint(pid, buf + 0x08, IPV6_TCLASS) ||
+      pt_setint(pid, buf + 0x0c, 0) ||
+      pt_setint(pid, buf + 0x10, 0) ||
+      pt_setint(pid, buf + 0x14, 0)) {
+    LOG_PT_PERROR(pid, "pt_setint(master options)");
+    goto cleanup_before_overlap;
+  }
+
+  if (pt_setsockopt(pid, master_sock, IPPROTO_IPV6,
+                    IPV6_2292PKTOPTIONS, buf, 24)) {
+    LOG_PT_PERROR(pid, "pt_setsockopt(master)");
+    goto cleanup_before_overlap;
+  }
+
+  if ((victim_sock = pt_socket(pid, AF_INET6, SOCK_DGRAM, IPPROTO_UDP)) < 0) {
+    LOG_PT_PERROR(pid, "pt_socket(victim)");
+    goto cleanup_before_overlap;
+  }
+
+  if (pt_setint(pid, buf + 0x00, 0) ||
+      pt_setint(pid, buf + 0x04, 0) ||
+      pt_setint(pid, buf + 0x08, 0) ||
+      pt_setint(pid, buf + 0x0c, 0) ||
+      pt_setint(pid, buf + 0x10, 0)) {
+    LOG_PT_PERROR(pid, "pt_setint(victim options)");
+    goto cleanup_before_overlap;
+  }
+
+  if (pt_setsockopt(pid, victim_sock, IPPROTO_IPV6, IPV6_PKTINFO, buf, 20)) {
+    LOG_PT_PERROR(pid, "pt_setsockopt(victim)");
+    goto cleanup_before_overlap;
+  }
+
+  /*
+   * Resolve every userspace entry point needed after socket overlap before
+   * invoking the kernel primitive. A missing symbol must not leave us
+   * attempting a remote call through address zero.
+   */
+  getpid_addr = pt_resolve(pid, "HoLVWNanBBc");
+  if (!getpid_addr || !pt_resolve(pid, "-Jp7F+pXxNg")) {
+    LOG_ERROR("elfldr_payload_args: required remote function not resolved");
+    goto cleanup_before_overlap;
+  }
+
+  /*
+   * From this point onward, do not close the sockets or unmap buf on failure.
+   * kernel_overlap_sockets may have partially changed kernel socket state;
+   * teardown without knowing that state is safe could make matters worse.
+   */
+  if (kernel_overlap_sockets(pid, master_sock, victim_sock)) {
+    LOG_PUTS("kernel_overlap_sockets failed; preserving overlap resources");
     return 0;
   }
 
-  pt_setint(pid, buf+0x00, 20);
-  pt_setint(pid, buf+0x04, IPPROTO_IPV6);
-  pt_setint(pid, buf+0x08, IPV6_TCLASS);
-  pt_setint(pid, buf+0x0c, 0);
-  pt_setint(pid, buf+0x10, 0);
-  pt_setint(pid, buf+0x14, 0);
-  if(pt_setsockopt(pid, master_sock, IPPROTO_IPV6, IPV6_2292PKTOPTIONS, buf, 24)) {
-    LOG_PT_PERROR(pid, "pt_setsockopt");
+  if (pt_pipe(pid, buf)) {
+    LOG_PT_PERROR(pid, "pt_pipe; preserving overlap resources");
     return 0;
   }
 
-  if((victim_sock=pt_socket(pid, AF_INET6, SOCK_DGRAM, IPPROTO_UDP)) < 0) {
-    LOG_PT_PERROR(pid, "pt_socket");
-    return 0;
-  }
-
-  pt_setint(pid, buf+0x00, 0);
-  pt_setint(pid, buf+0x04, 0);
-  pt_setint(pid, buf+0x08, 0);
-  pt_setint(pid, buf+0x0c, 0);
-  pt_setint(pid, buf+0x10, 0);
-  if(pt_setsockopt(pid, victim_sock, IPPROTO_IPV6, IPV6_PKTINFO, buf, 20)) {
-    LOG_PT_PERROR(pid, "pt_setsockopt");
-    return 0;
-  }
-
-  if(kernel_overlap_sockets(pid, master_sock, victim_sock)) {
-    LOG_PUTS("kernel_overlap_sockets failed");
-    return 0;
-  }
-
-  if(pt_pipe(pid, buf)) {
-    LOG_PT_PERROR(pid, "pt_pipe");
-    return 0;
-  }
   pipe0 = pt_getint(pid, buf);
-  pipe1 = pt_getint(pid, buf+4);
+  pipe1 = pt_getint(pid, buf + 4);
+  if (pipe0 < 0 || pipe1 < 0) {
+    LOG_PT_PERROR(pid, "reading pipe descriptors; preserving overlap resources");
+    return 0;
+  }
 
-  intptr_t args       = buf;
-  intptr_t rwpipe     = buf + 0x100;
-  intptr_t rwpair     = buf + 0x200;
-  intptr_t kpipe_addr = kernel_get_proc_file(pid, pipe0);
-  intptr_t payloadout = buf + 0x300;
-  intptr_t getpid      = pt_resolve(pid, "HoLVWNanBBc");
+  args = buf;
+  rwpipe = buf + 0x100;
+  rwpair = buf + 0x200;
+  kpipe_addr = kernel_get_proc_file(pid, pipe0);
+  payloadout = buf + 0x300;
 
-  pt_setlong(pid, args + 0x00, getpid);
-  pt_setlong(pid, args + 0x08, rwpipe);
-  pt_setlong(pid, args + 0x10, rwpair);
-  pt_setlong(pid, args + 0x18, kpipe_addr);
-  pt_setlong(pid, args + 0x20, KERNEL_ADDRESS_DATA_BASE);
-  pt_setlong(pid, args + 0x28, payloadout);
-  pt_setint(pid, rwpipe + 0, pipe0);
-  pt_setint(pid, rwpipe + 4, pipe1);
-  pt_setint(pid, rwpair + 0, master_sock);
-  pt_setint(pid, rwpair + 4, victim_sock);
-  pt_setint(pid, payloadout, 0);
+  if (!kpipe_addr) {
+    LOG_ERROR("elfldr_payload_args: kernel pipe file lookup failed; "
+              "preserving overlap resources");
+    return 0;
+  }
+
+  if (pt_setlong(pid, args + 0x00, getpid_addr) ||
+      pt_setlong(pid, args + 0x08, rwpipe) ||
+      pt_setlong(pid, args + 0x10, rwpair) ||
+      pt_setlong(pid, args + 0x18, kpipe_addr) ||
+      pt_setlong(pid, args + 0x20, KERNEL_ADDRESS_DATA_BASE) ||
+      pt_setlong(pid, args + 0x28, payloadout) ||
+      pt_setint(pid, rwpipe + 0, pipe0) ||
+      pt_setint(pid, rwpipe + 4, pipe1) ||
+      pt_setint(pid, rwpair + 0, master_sock) ||
+      pt_setint(pid, rwpair + 4, victim_sock) ||
+      pt_setint(pid, payloadout, 0)) {
+    LOG_PT_PERROR(pid, "writing payload arguments; preserving overlap resources");
+    return 0;
+  }
 
   return args;
+
+cleanup_before_overlap:
+  /*
+   * This label is reachable only before kernel_overlap_sockets is called.
+   * At this point both sockets are ordinary descriptors and can be closed.
+   */
+  if (victim_sock >= 0 && pt_close(pid, victim_sock) != 0) {
+    LOG_PT_PERROR(pid, "cleanup pt_close(victim)");
+  }
+  if (master_sock >= 0 && pt_close(pid, master_sock) != 0) {
+    LOG_PT_PERROR(pid, "cleanup pt_close(master)");
+  }
+  if (buf > 0 && pt_munmap(pid, buf, PAGE_SIZE) != 0) {
+    LOG_PT_PERROR(pid, "cleanup pt_munmap");
+  }
+  return 0;
 }
 
 
