@@ -294,6 +294,12 @@ inline constexpr bool overlay_frame_graph_opacity_valid(int pct) {
   return false;
 }
 
+static_assert(overlay_opacity_valid(kOverlayOpacityDefault),
+              "default panel opacity must be a supported slider value");
+static_assert(overlay_frame_graph_opacity_valid(
+                  kOverlayFrameGraphOpacityDefault),
+              "default frame-graph opacity must be a supported value");
+
 /** Colour theme of the fps-monitor overlay (overlay_scene.hpp Theme order). */
 inline constexpr int kOverlayThemeClassic = 0;
 inline constexpr int kOverlayThemeMono = 1;
