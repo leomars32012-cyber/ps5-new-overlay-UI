@@ -271,10 +271,23 @@ inline const char *overlay_detail_name(int detail) {
 /** Background opacity in percent; 0 hides the background. */
 inline constexpr std::array<int, 11> kOverlayOpacityOptions = {
     0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100};
-inline constexpr int kOverlayOpacityDefault = 85;
+inline constexpr int kOverlayOpacityDefault = 80;
+
+/** Independent frame-graph opacity choices retained for compatibility. */
+inline constexpr std::array<int, 4> kOverlayFrameGraphOpacityOptions = {
+    0, 40, 65, 85};
+inline constexpr int kOverlayFrameGraphOpacityDefault = 85;
 
 inline constexpr bool overlay_opacity_valid(int pct) {
   for (int option : kOverlayOpacityOptions) {
+    if (option == pct)
+      return true;
+  }
+  return false;
+}
+
+inline constexpr bool overlay_frame_graph_opacity_valid(int pct) {
+  for (int option : kOverlayFrameGraphOpacityOptions) {
     if (option == pct)
       return true;
   }
@@ -519,8 +532,8 @@ struct Settings {
   bool overlay_system = true;
   /** 7.5 s frame-time graph along the bottom edge (every level). */
   bool overlay_frame_graph = true;
-  /** The graph's own background opacity; one of kOverlayOpacityOptions. */
-  int overlay_frame_graph_opacity = kOverlayOpacityDefault;
+  /** The graph's own background opacity; independent from panel opacity. */
+  int overlay_frame_graph_opacity = kOverlayFrameGraphOpacityDefault;
   /** Edge gap in pixels; one of kOverlayMarginOptions. */
   int overlay_margin = kOverlayMarginDefault;
   /** kOverlayTheme*: classic, mono, aurora, vice, emerald, sunset, arctic, crimson or gold. */
