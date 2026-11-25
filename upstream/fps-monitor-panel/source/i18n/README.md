@@ -1,5 +1,7 @@
 # Notification strings
 
+> Component-level guide for the integrated PS5 overlay fork. This document describes only the compiled notification catalog; for the full overlay feature set, build/release process and current watchdog behavior, see the [repository-root README](../../../../README.md).
+
 Notification text lives in one JSON file per locale and is compiled into
 the ELF by `generate_catalog.py`. The console does not load locale files at
 runtime.
