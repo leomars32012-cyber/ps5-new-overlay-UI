@@ -130,6 +130,18 @@ The imported implementation is pinned by `upstream/FPS_MONITOR_PANEL_UPSTREAM_CO
 - `OnRender_Hook()` drives periodic sampling/render work and calls `overlay_reload_settings()`.
 - `overlay_reload_settings()` reloads settings when the configuration file's modification time changes; `load_settings()` applies the new settings and layout.
 
+## Injection supervision and crash accounting
+
+The host watchdog records an injection attempt against the exact ShellUI PID that is actually targeted. The dispatch timestamp and PID are captured immediately before the injector is invoked, rather than when an attempt is merely being prepared.
+
+A subsequent ShellUI crash is attributed to that injection only when:
+- The crashed ShellUI PID matches the PID recorded at injection dispatch.
+- The crash timestamp falls within the configured crash-attribution window after dispatch.
+
+This prevents a ShellUI PID replacement that occurs before the injector is dispatched from being incorrectly counted as an injection-related crash. The change is limited to attempt/crash accounting and PID-specific diagnostics; it does not change injection mechanics, retry limits, renderer readiness semantics or add a renderer heartbeat.
+
+**Validation for this change:** host tests and both PS5 payload build variants passed in [GitHub Actions run #140](https://github.com/leomars32012-cyber/ps5-new-overlay-UI/actions/runs/45685890130). The standard payload from that run was also reported working in a normal on-console startup/injection test. This is a successful smoke test, not exhaustive validation of crash recovery or every firmware.
+
 ## Build and tests
 
 ### Requirements

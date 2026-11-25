@@ -229,12 +229,15 @@ void ensure_overlay(onion::ToolboxInject &injector) {
   /* The overlay has no crash handler inside ShellUI; a pid change is the
    * only trace a ShellUI crash leaves here. */
   static pid_t last_pid = -1;
+  static pid_t last_inject_pid = -1;
   static time_t last_inject_at = 0;
   static int crash_streak = 0;
   static bool gave_up = false;
   if (pid != last_pid) {
     if (last_pid > 1) {
-      const bool ours = last_inject_at != 0 &&
+      const bool ours = last_inject_pid == last_pid &&
+                        last_inject_at != 0 &&
+                        ts.tv_sec >= last_inject_at &&
                         ts.tv_sec - last_inject_at <= kCrashWindowSec;
       crash_streak = ours ? crash_streak + 1 : 0;
       LOG_WARN("fps-monitor: SceShellUI pid=%d gone (restarted or crashed?)"
@@ -273,12 +276,17 @@ void ensure_overlay(onion::ToolboxInject &injector) {
   if (!wait_shellui_ready(pid))
     return;
 
-  LOG_INFO("fps-monitor: injecting overlay into SceShellUI pid=%d",
+  LOG_INFO("fps-monitor: preparing overlay injection pid=%d",
            static_cast<int>(pid));
-  last_inject_at = ts.tv_sec ? ts.tv_sec : 1; // 0 means "never injected"
   const onion::ToolboxInjectionOutcome outcome = injector.inject(
       []() -> pid_t { return onion_find_pid("SceShellUI"); },
-      [](pid_t target) -> bool {
+      [&](pid_t target) -> bool {
+        timespec dispatch_ts{};
+        clock_gettime(CLOCK_MONOTONIC, &dispatch_ts);
+        last_inject_pid = target;
+        last_inject_at = dispatch_ts.tv_sec ? dispatch_ts.tv_sec : 1;
+        LOG_INFO("fps-monitor: dispatching overlay injection pid=%d",
+                 static_cast<int>(target));
         return Inject_Toolbox(static_cast<int>(target),
                               monitor_shellui_elf_start);
       },
