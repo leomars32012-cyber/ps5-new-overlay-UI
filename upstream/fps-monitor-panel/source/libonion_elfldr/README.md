@@ -1,5 +1,7 @@
 # libonion_elfldr
 
+> Component-level security and loader notes for the integrated PS5 overlay fork. This file documents the shared ptrace/ELF-loader library only; see the [repository-root README](../../../../README.md) for the active payload architecture, injection watchdog accounting, supported settings and release/build validation.
+
 Single implementation of ptrace helpers (`pt_*`) and inject-path ELF loading
 (`elfldr_load`, `elfldr_payload_args`, `elfldr_spawn`,
 `elfldr_raise_privileges`).
