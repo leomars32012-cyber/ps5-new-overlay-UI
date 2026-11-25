@@ -1,5 +1,7 @@
 # PS5 FPS Monitor Overlay
 
+<sub>Repository release line: `v1.0.16-beta.15` (documentation/build target; release publication pending).</sub>
+
 A native in-game performance HUD for jailbroken PlayStation 5 consoles. The shipped payload is based on **[rawalakshay/fps-monitor-panel](https://github.com/rawalakshay/fps-monitor-panel)**. The upstream implementation is the active product foundation; this repository retains its source, build system, settings app, license and notices under `upstream/fps-monitor-panel/`.
 
 > **Current development branch:** `refactor/reference-monitor-integration`  
@@ -41,7 +43,7 @@ Each reading carries independent validity state. Failed, unavailable or out-of-r
 
 ### Overlay settings and live reload
 
-The settings UI controls overlay enablement, edge, alignment, margin, detail level, theme, text size, background opacity, metric visibility, frame-graph visibility/opacity and the extra FPS pill. Settings are stored in the upstream INI configuration.
+The settings UI controls overlay enablement, edge, alignment, margin, detail level, theme, text size, background opacity, metric visibility and order, frame-graph visibility/opacity, and the extra FPS pill. The nine independent system metrics can be reordered separately from their visibility state; see [Reorderable system metrics](#reorderable-system-metrics). Settings are stored in the upstream INI configuration.
 
 The ShellUI side checks for configuration changes about once per second and applies updates without requiring the payload to be restarted. If the config file is temporarily missing, the last loaded settings remain active.
 
@@ -177,7 +179,13 @@ Other supported script options include `--debug`, `--jobs N` and `--build-dir DI
 upstream/fps-monitor-panel/build/bin/fps-monitor.elf
 ```
 
-GitHub Actions runs the host tests and PS5 SDK build and uploads the build artifacts. A release is published for a `v*` tag or when explicitly requested through the workflow's manual release input. Check the workflow file for the exact branch/tag triggers and artifact names.
+GitHub Actions runs the host tests, builds the standard payload and optional HUD-diagnostics payload, generates SHA-256 checksums, and uploads both ELF variants plus `config.ini.example`. The release job publishes a prerelease for a pushed `v*` tag or when the workflow is manually dispatched with `create_release=true`. The release assets currently include the standard `fps-monitor.elf`, `SHA256SUMS.txt`, and `config.ini.example`; the diagnostics ELF remains available in the workflow artifact.
+
+## Injection watchdog behavior
+
+The active host watchdog checks ShellUI identity/readiness before dispatching injection. Injection crash accounting is PID-specific: the dispatch PID and timestamp are recorded immediately before the injector is called, and a later ShellUI crash is attributed to that attempt only when it belongs to the same PID and falls inside the existing crash window. A pre-dispatch PID replacement is therefore not counted as an injection crash. This change does not increase retry limits, alter the injection mechanism, or add renderer-heartbeat verification.
+
+The tested standard payload from the PID-accounting change was confirmed working during normal startup/injection on a PS5. CI validation covers host tests and both payload builds; it is not a substitute for firmware-specific runtime testing.
 
 ## Validation status and known limitations
 
