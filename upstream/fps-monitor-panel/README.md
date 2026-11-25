@@ -1,12 +1,12 @@
-<h1 align="center">fps-monitor-panel</h1>
+<h1 align="center">PS5 FPS Monitor Overlay — integrated upstream base</h1>
 
 <p align="center">
-  An in-game performance overlay for jailbroken PS5 consoles.<br>
-  Frame rate, frame times, CPU / GPU temperatures and memory, drawn over any game from a single payload.
+  The integrated upstream-based implementation used by <a href="https://github.com/leomars32012-cyber/ps5-new-overlay-UI">PS5 FPS Monitor Overlay</a>.<br>
+  This directory preserves the upstream implementation, source notices and build foundation; fork-specific telemetry, settings and watchdog documentation is maintained in the repository-root README.
 </p>
 
 <p align="center">
-  <a href="https://github.com/rawalakshay/fps-monitor-panel/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/rawalakshay/fps-monitor-panel?style=flat-square&color=5aa9e6"></a>
+  <a href="https://github.com/leomars32012-cyber/ps5-new-overlay-UI/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/rawalakshay/fps-monitor-panel?style=flat-square&color=5aa9e6"></a>
   <a href="LICENSE"><img alt="License: GPL-3.0" src="https://img.shields.io/github/license/rawalakshay/fps-monitor-panel?style=flat-square&color=5aa9e6"></a>
   <img alt="Platform: PS5" src="https://img.shields.io/badge/platform-PS5-5aa9e6?style=flat-square">
   <a href="https://github.com/rawalakshay/fps-monitor-panel/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/rawalakshay/fps-monitor-panel?style=flat-square&color=f5b13d"></a>
@@ -96,7 +96,7 @@ Layout illustrations; the numbers are examples.
 > [!NOTE]
 > The payload runs until the console is turned off. It reloads the overlay by itself after rest mode; after a full reboot, send it again. Sending it twice shows `[FPS Monitor] already running`.
 >
-> The overlay waits for the system UI to settle before it loads. When the payload starts with the console (autoload at boot), the overlay appears about two minutes after boot; sent later, it appears about 10 seconds after the payload starts.
+> The overlay waits for the system UI to settle before it loads. When the payload starts with the console (autoload at boot), the overlay appears about two minutes after boot; sent later, it appears about 10 seconds after the payload starts. The integrated fork's host watchdog binds injection-attempt/crash accounting to the ShellUI PID actually targeted; it does not attribute a PID replacement before dispatch to the injection.
 
 > [!WARNING]
 > Do not run it alongside another performance overlay, such as the monitor bar of a full homebrew toolkit. It cannot detect other overlays, and both would draw at once.
@@ -172,9 +172,9 @@ The overlay picks up changes within about a second. Invalid values fall back to 
 | `edge` | `top`, `bottom` | `top` | Screen edge the overlay sits on. |
 | `align` | `left`, `center`, `right` | `left` | Position along that edge. |
 | `font_size` | `small`, `medium`, `large` | `medium` | Text size; the whole overlay scales with it. |
-| `opacity` | `0`, `40`, `65`, `85` | `85` | Background opacity in percent; `0` hides the background. |
+| `opacity` | `0`–`100` in supported 10-point increments | `85` | Background opacity in percent; `0` hides the background. The web UI exposes the supported choices. |
 | `margin` | `0`, `5`, `10`, `20` | `20` | Gap from the screen edges, in pixels. |
-| `system` | `true`, `false` | `true` | CPU / GPU / memory row. |
+| `system` | `true`, `false` | `true` | System metrics area. The integrated fork exposes independently controlled CPU, GPU, memory, fan, IP, CPU clock, GPU clock, SSD temperature and SoC power metrics. |
 | `frame_graph` | `true`, `false` | `true` | 7.5 s frame-time graph along the bottom edge (top edge when `edge=bottom`). |
 | `frame_graph_opacity` | `0`, `40`, `65`, `85` | `85` | Background opacity of the frame-time graph. |
 | `fps_pill` | `true`, `false` | `false` | Also show a small FPS pill in the opposite corner. |
@@ -216,6 +216,10 @@ The log is at `/data/fps-monitor/fps-monitor.log`.
 - **The page says "Can't reach the FPS Monitor on this console"**: the page loaded earlier but the payload is no longer running, or the console is in rest mode. Wake the console, send the payload again if needed, then tap **Retry**.
 - **A change does not show in the game**: wait a second after Save, then check the log for `settings reloaded`.
 - **Two overlays on screen**: another performance overlay is running. Use only one.
+
+## Fork-specific integration
+
+This source tree is the active build foundation for the fork, but this README retains the upstream project's detailed component guide. For the fork's current feature inventory, telemetry qualifications, nine-metric ordering/persistence behavior, active source map, injection watchdog behavior, validation status and build workflow, see the [repository-root README](../../README.md). The fork's GitHub Releases page is the distribution source for its payloads.
 
 ## How it works
 
